@@ -1,6 +1,7 @@
 #!name=YouTube 增强
 #!desc=去除 YouTube 广告，支持后台播放、画中画、字幕翻译、强制最高画质等
 
+
 [Argument]
 blockUpload = switch,true,tag=隐藏「上传」入口,desc=隐藏导航栏中的「上传」入口
 blockShorts = switch,false,tag=隐藏「Shorts」入口,desc=隐藏导航栏中的「Shorts」入口
