@@ -9,7 +9,7 @@ blockGames = switch,true,tag=隐藏小游戏推荐,desc=隐藏 YouTube Playables
 blockVerticalLive = switch,false,tag=隐藏竖屏直播推荐,desc=隐藏各界面中的竖屏直播推荐
 jumpAhead = switch,true,tag=启用 Jump Ahead,desc=启用原生「Jump Ahead」跳转按钮，并去除其推广提示
 blockStore = switch,true,tag=隐藏商店和购物板块,desc=隐藏视频下方和频道主页中的创作者商店、购物板块
-nativeDownload = switch,false,tag=原生下载（实验性）,desc=实验性原生下载功能；未设置画质时使用 720p，服务器限制可能仍然生效
+nativeDownload = switch,false,tag=原生下载,desc=实验性原生下载功能；未设置画质时使用 720p，服务器限制可能仍然生效
 dualSubs = switch,false,tag=双语字幕翻译,desc=开启后显示双语字幕（原文+中文翻译）
 singleSubs = switch,false,tag=单语模式,desc=开启后只显示中文翻译字幕，不显示原文
 
