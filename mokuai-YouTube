@@ -11,6 +11,7 @@ jumpAhead = switch,true,tag=启用 Jump Ahead,desc=启用原生「Jump Ahead」�
 blockStore = switch,true,tag=隐藏商店和购物板块,desc=隐藏视频下方和频道主页中的创作者商店、购物板块
 nativeDownload = switch,false,tag=原生下载（实验性）,desc=实验性原生下载功能；未设置画质时使用 720p，服务器限制可能仍然生效
 dualSubs = switch,false,tag=双语字幕翻译,desc=开启后显示双语字幕（原文+中文翻译）
+singleSubs = switch,false,tag=单语模式,desc=开启后只显示中文翻译字幕，不显示原文
 
 [Script]
 # ===== 去广告与UI增强（gholts版） =====
@@ -40,40 +41,40 @@ http-request ^https:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/log_event scrip
 
 # ===== 双语字幕翻译（DualSubs版） =====
 # Player 请求处理
-http-request ^https?:\/\/(www|m|tv)\.youtube\.com\/youtubei\/v1\/player(\?.+)?$ script-path=https://github.com/DualSubs/YouTube/releases/download/v1.5.11/request.bundle.js, requires-body=true, tag=dualsubs.player.request.json, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly=false&LogLevel=WARN&enabled={dualSubs}"
+http-request ^https?:\/\/(www|m|tv)\.youtube\.com\/youtubei\/v1\/player(\?.+)?$ script-path=https://github.com/DualSubs/YouTube/releases/download/v1.5.11/request.bundle.js, requires-body=true, tag=dualsubs.player.request.json, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly={singleSubs}&LogLevel=WARN&enabled={dualSubs}"
 
 # Player 响应处理
-http-response ^https?:\/\/(www|m|tv)\.youtube\.com\/youtubei\/v1\/player(\?.+)?$ script-path=https://github.com/DualSubs/YouTube/releases/download/v1.5.11/response.bundle.js, requires-body=true, tag=dualsubs.player.response.json, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly=false&LogLevel=WARN&enabled={dualSubs}"
+http-response ^https?:\/\/(www|m|tv)\.youtube\.com\/youtubei\/v1\/player(\?.+)?$ script-path=https://github.com/DualSubs/YouTube/releases/download/v1.5.11/response.bundle.js, requires-body=true, tag=dualsubs.player.response.json, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly={singleSubs}&LogLevel=WARN&enabled={dualSubs}"
 
 # Player protobuf 请求处理
-http-request ^https?:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/player(\?.+)?$ script-path=https://github.com/DualSubs/YouTube/releases/download/v1.5.11/request.bundle.js, requires-body=true, binary-body-mode=true, tag=dualsubs.player.request.proto, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly=false&LogLevel=WARN&enabled={dualSubs}"
+http-request ^https?:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/player(\?.+)?$ script-path=https://github.com/DualSubs/YouTube/releases/download/v1.5.11/request.bundle.js, requires-body=true, binary-body-mode=true, tag=dualsubs.player.request.proto, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly={singleSubs}&LogLevel=WARN&enabled={dualSubs}"
 
 # Player protobuf 响应处理
-http-response ^https?:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/player(\?.+)?$ script-path=https://github.com/DualSubs/YouTube/releases/download/v1.5.11/response.bundle.js, requires-body=true, binary-body-mode=true, tag=dualsubs.player.response.proto, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly=false&LogLevel=WARN&enabled={dualSubs}"
+http-response ^https?:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/player(\?.+)?$ script-path=https://github.com/DualSubs/YouTube/releases/download/v1.5.11/response.bundle.js, requires-body=true, binary-body-mode=true, tag=dualsubs.player.response.proto, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly={singleSubs}&LogLevel=WARN&enabled={dualSubs}"
 
 # GetWatch protobuf 响应处理
-http-response ^https?:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/get_watch(\?.+)?$ script-path=https://github.com/DualSubs/YouTube/releases/download/v1.5.11/response.bundle.js, requires-body=true, binary-body-mode=true, tag=dualsubs.getwatch.response.proto, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly=false&LogLevel=WARN&enabled={dualSubs}"
+http-response ^https?:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/get_watch(\?.+)?$ script-path=https://github.com/DualSubs/YouTube/releases/download/v1.5.11/response.bundle.js, requires-body=true, binary-body-mode=true, tag=dualsubs.getwatch.response.proto, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly={singleSubs}&LogLevel=WARN&enabled={dualSubs}"
 
 # 字幕请求处理
-http-request ^https?:\/\/(www|m)\.youtube\.com\/api\/timedtext(\?.+)?$ script-path=https://github.com/DualSubs/YouTube/releases/download/v1.5.11/request.bundle.js, tag=dualsubs.timedtext.request, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly=false&LogLevel=WARN&enabled={dualSubs}"
+http-request ^https?:\/\/(www|m)\.youtube\.com\/api\/timedtext(\?.+)?$ script-path=https://github.com/DualSubs/YouTube/releases/download/v1.5.11/request.bundle.js, tag=dualsubs.timedtext.request, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly={singleSubs}&LogLevel=WARN&enabled={dualSubs}"
 
 # 双语字幕合成响应
-http-response ^https?:\/\/(www|m)\.youtube\.com\/api\/timedtext\?(.*)subtype=(Official|External) script-path=https://github.com/DualSubs/Universal/releases/latest/download/Composite.Subtitles.response.bundle.js, requires-body=true, tag=dualsubs.composite.timedtext, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly=false&LogLevel=WARN&enabled={dualSubs}"
+http-response ^https?:\/\/(www|m)\.youtube\.com\/api\/timedtext\?(.*)subtype=(Official|External) script-path=https://github.com/DualSubs/Universal/releases/latest/download/Composite.Subtitles.response.bundle.js, requires-body=true, tag=dualsubs.composite.timedtext, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly={singleSubs}&LogLevel=WARN&enabled={dualSubs}"
 
 # 翻译字幕响应
-http-response ^https?:\/\/(www|m)\.youtube\.com\/api\/timedtext\?(.*)subtype=Translate script-path=https://github.com/DualSubs/Universal/releases/latest/download/Translate.response.bundle.js, requires-body=true, tag=dualsubs.translate.timedtext, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly=false&LogLevel=WARN&enabled={dualSubs}"
+http-response ^https?:\/\/(www|m)\.youtube\.com\/api\/timedtext\?(.*)subtype=Translate script-path=https://github.com/DualSubs/Universal/releases/latest/download/Translate.response.bundle.js, requires-body=true, tag=dualsubs.translate.timedtext, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly={singleSubs}&LogLevel=WARN&enabled={dualSubs}"
 
 # YouTube Music 浏览请求
-http-request ^https?:\/\/music\.youtube\.com\/youtubei\/v1\/browse(\?.+)?$ script-path=https://github.com/DualSubs/YouTube/releases/download/v1.5.11/request.bundle.js, requires-body=true, tag=dualsubs.music.browse.request, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly=false&LogLevel=WARN&enabled={dualSubs}"
+http-request ^https?:\/\/music\.youtube\.com\/youtubei\/v1\/browse(\?.+)?$ script-path=https://github.com/DualSubs/YouTube/releases/download/v1.5.11/request.bundle.js, requires-body=true, tag=dualsubs.music.browse.request, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly={singleSubs}&LogLevel=WARN&enabled={dualSubs}"
 
 # YouTube 浏览 protobuf 请求
-http-request ^https?:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/browse(\?.+)?$ script-path=https://github.com/DualSubs/YouTube/releases/download/v1.5.11/request.bundle.js, requires-body=true, binary-body-mode=true, tag=dualsubs.browse.request.proto, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly=false&LogLevel=WARN&enabled={dualSubs}"
+http-request ^https?:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/browse(\?.+)?$ script-path=https://github.com/DualSubs/YouTube/releases/download/v1.5.11/request.bundle.js, requires-body=true, binary-body-mode=true, tag=dualsubs.browse.request.proto, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly={singleSubs}&LogLevel=WARN&enabled={dualSubs}"
 
 # YouTube Music 歌词翻译（JSON）
-http-response ^https?:\/\/music\.youtube\.com\/youtubei\/v1\/browse\?(.*)subtype=Translate script-path=https://github.com/DualSubs/Universal/releases/latest/download/Translate.response.bundle.js, requires-body=true, tag=dualsubs.music.lyrics.json, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly=false&LogLevel=WARN&enabled={dualSubs}"
+http-response ^https?:\/\/music\.youtube\.com\/youtubei\/v1\/browse\?(.*)subtype=Translate script-path=https://github.com/DualSubs/Universal/releases/latest/download/Translate.response.bundle.js, requires-body=true, tag=dualsubs.music.lyrics.json, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly={singleSubs}&LogLevel=WARN&enabled={dualSubs}"
 
 # YouTube Music 歌词翻译（protobuf）
-http-response ^https?:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/browse\?(.*)subtype=Translate script-path=https://github.com/DualSubs/Universal/releases/latest/download/Translate.response.bundle.js, requires-body=true, binary-body-mode=true, tag=dualsubs.music.lyrics.proto, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly=false&LogLevel=WARN&enabled={dualSubs}"
+http-response ^https?:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/browse\?(.*)subtype=Translate script-path=https://github.com/DualSubs/Universal/releases/latest/download/Translate.response.bundle.js, requires-body=true, binary-body-mode=true, tag=dualsubs.music.lyrics.proto, argument="Type=Translate&Types=Translate&AutoCC=true&Position=Forward&Vendor=Google&ShowOnly={singleSubs}&LogLevel=WARN&enabled={dualSubs}"
 
 [Rewrite]
 # 拦截广告初始化请求
