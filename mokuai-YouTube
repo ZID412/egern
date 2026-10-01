@@ -16,8 +16,8 @@ blockVerticalLive = switch,false,tag=隐藏竖屏直播推荐,desc=隐藏各界�
 jumpAhead = switch,true,tag=启用 Jump Ahead,desc=启用原生「Jump Ahead」跳转按钮，并去除其推广提示
 blockStore = switch,true,tag=隐藏商店和购物板块,desc=隐藏视频下方和频道主页中的创作者商店、购物板块
 nativeDownload = switch,false,tag=原生下载（实验性）,desc=实验性原生下载功能；未设置画质时使用 720p，服务器限制可能仍然生效
-captionLang = text,off,tag=字幕翻译语言,desc=字幕翻译目标语言，off为关闭
-lyricLang = text,off,tag=歌词翻译语言,desc=YouTube Music歌词翻译目标语言，off为关闭
+captionTranslate = switch,false,tag=字幕翻译,desc=开启后自动将字幕翻译成中文
+lyricTranslate = switch,false,tag=歌词翻译,desc=开启后自动将YouTube Music歌词翻译成中文
 
 [Script]
 # 广告拦截：播放中广告插播请求
@@ -33,7 +33,7 @@ http-request ^https:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/player(?:\?.*)?
 http-response ^https:\/\/youtubei\.googleapis\.com\/youtubei\/v1\/(?:navigation\/resolve_url|browse|next|player|search|reel\/reel_watch_sequence|guide|account\/get_setting|get_watch|log_event|config)(?:\?.*)?$ script-path=https://raw.githubusercontent.com/gholts/surge/main/scripts/youtube/response.js, requires-body=true, binary-body-mode=true, max-size=0, tag=youtube.enhance.response, argument="{"blockUpload":{blockUpload},"blockShorts":{blockShorts},"blockGames":{blockGames},"blockVerticalLive":{blockVerticalLive},"jumpAhead":{jumpAhead},"autoHd":{autoHd},"blockStore":{blockStore}}"
 
 # 第二层去广告 + 字幕翻译（kelee版，后执行）
-http-response ^https:\/\/youtubei\.googleapis\.com\/(youtubei\/v1\/(browse|next|player|search|reel\/reel_watch_sequence|guide|account\/get_setting|get_watch))(\?(.*))?$ script-path=https://kelee.one/Resource/JavaScript/YouTube/YouTube_remove_ads/YouTube_remove_ads_response.js, requires-body=true, binary-body-mode=true, max-size=0, tag=youtube.enhance.response-extra, argument="[{blockUpload},{blockShorts},false,{captionLang},{lyricLang},false]"
+http-response ^https:\/\/youtubei\.googleapis\.com\/(youtubei\/v1\/(browse|next|player|search|reel\/reel_watch_sequence|guide|account\/get_setting|get_watch))(\?(.*))?$ script-path=https://kelee.one/Resource/JavaScript/YouTube/YouTube_remove_ads/YouTube_remove_ads_response.js, requires-body=true, binary-body-mode=true, max-size=0, tag=youtube.enhance.response-extra, argument="[{blockUpload},{blockShorts},false,{captionTranslate},{lyricTranslate},false]"
 
 # 视频流初始化（响应）
 http-response ^https?:\/\/[\w-]+\.googlevideo\.com\/initplayback(?:\?.*)?$ script-path=https://raw.githubusercontent.com/gholts/surge/main/scripts/youtube/response.js, requires-body=true, binary-body-mode=true, max-size=0, tag=youtube.enhance.ump, argument="{"blockGames":{blockGames},"blockVerticalLive":{blockVerticalLive},"jumpAhead":{jumpAhead},"autoHd":{autoHd},"blockStore":{blockStore}}"
