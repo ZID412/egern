@@ -7,6 +7,7 @@
 // 值：你的策略组名称
 
 
+
 export default async function (ctx) {
   var group = (ctx.env && ctx.env.GROUP) || 'DIRECT';
   var cacheKey = 'cleanip_report_' + group;
@@ -28,32 +29,44 @@ export default async function (ctx) {
   // 缓存很新鲜(<2分钟): 直接秒开，不发起网络请求
   if (cached && (Date.now() - cached.ts) < 120000) {
     cached.fromCache = true;
-    return renderWidget(cached, null, ctx.widgetFamily, group, '缓存 ' + cached.ageMin + 'min');
+    return safeRender(renderWidget, cached, null, ctx.widgetFamily, group, '缓存 ' + cached.ageMin + 'min');
   }
 
   var report = null;
   var cli = null;
+  var cliIp = (cached && cached.ip) || '';
 
-  // 阶段1: CLI 拿基础数据 + 本机出口 IP（4 秒超时）
-  try {
-    var r1 = await ctx.http.get('https://cleanip.io/cli', { policy: group, timeout: 4000 });
-    cli = parseCli(await r1.text());
-  } catch (e) {
-    cli = null;
-  }
-
-  // 阶段2: 完整报告页（用缓存 IP 或 CLI IP，4 秒超时）
-  var ip = (cached && cached.ip) || (cli && cli.ip);
-  if (ip) {
+  if (cliIp) {
+    // 有缓存 IP: CLI 与报告页并发，各 5 秒超时，总预算约 5 秒
+    var p1 = ctx.http.get('https://cleanip.io/cli', { policy: group, timeout: 5000 })
+      .then(function (r) { return r.text(); })
+      .then(function (t) { cli = parseCli(t); })
+      .catch(function () { cli = null; });
+    var p2 = ctx.http.get('https://cleanip.io/' + cliIp, {
+      policy: group,
+      timeout: 5000,
+    })
+      .then(function (r) { return r.text(); })
+      .then(function (t) { report = parseReport(t); })
+      .catch(function () { report = null; });
     try {
-      var r2 = await ctx.http.get('https://cleanip.io/' + ip, {
-        policy: group,
-        headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' },
-        timeout: 4000,
-      });
-      report = parseReport(await r2.text());
+      await Promise.all([p1, p2]);
+    } catch (e) { /* 已在各分支兜底 */ }
+  } else {
+    // 无缓存: CLI 先拿 IP（3 秒），再请求报告页（4 秒），总预算约 7 秒
+    try {
+      var r1 = await ctx.http.get('https://cleanip.io/cli', { policy: group, timeout: 3000 });
+      cli = parseCli(await r1.text());
     } catch (e) {
-      report = null;
+      cli = null;
+    }
+    if (cli && cli.ip) {
+      try {
+        var r2 = await ctx.http.get('https://cleanip.io/' + cli.ip, { policy: group, timeout: 4000 });
+        report = parseReport(await r2.text());
+      } catch (e) {
+        report = null;
+      }
     }
   }
 
@@ -90,7 +103,27 @@ export default async function (ctx) {
     };
   }
 
-  return renderWidget(data, cli, ctx.widgetFamily, group, latencyInfo);
+  return safeRender(renderWidget, data, cli, ctx.widgetFamily, group, latencyInfo);
+}
+
+/* 渲染保险：任何意外异常都输出可见文案，绝不白屏 */
+function safeRender(fn, a, b, c, d, e) {
+  try {
+    return fn(a, b, c, d, e);
+  } catch (err) {
+    var msg = '渲染出错';
+    try { msg = String(err && err.message ? err.message : err); } catch (x) {}
+    return {
+      type: 'widget',
+      padding: 16,
+      gap: 4,
+      backgroundColor: '#FFFFFF',
+      children: [
+        { type: 'text', text: '渲染出错 · 见日志', font: { size: 'footnote', weight: 'semibold' }, textColor: '#A14E50' },
+        { type: 'text', text: msg, font: { size: 'caption2' }, textColor: '#8A9199', maxLines: 3, minScale: 0.6 },
+      ],
+    };
+  }
 }
 
 /* ==================== 数据解析 ==================== */
@@ -321,7 +354,7 @@ function renderLarge(data, cli, group, latencyInfo) {
   var checksMap = {};
   for (var j = 0; j < (data.checks || []).length; j++) {
     var c = data.checks[j];
-    checksMap[c.key] = c;
+    if (c && typeof c === 'object' && c.key) checksMap[c.key] = c;
   }
   function riskCell(name, c) {
     if (c) {
@@ -388,7 +421,7 @@ function renderLarge(data, cli, group, latencyInfo) {
         type: 'stack', direction: 'column', alignItems: 'end', gap: 1,
         children: [
           {
-            type: 'stack', direction: 'row', alignItems: 'baseline', gap: 2,
+            type: 'stack', direction: 'row', alignItems: 'end', gap: 2,
             children: [
               { type: 'text', text: String(score), font: { size: 20, weight: 'bold' }, textColor: '#2C5FA6' },
               { type: 'text', text: grade, font: { size: 11, weight: 'semibold' }, textColor: '#2C5FA6' },
@@ -489,7 +522,7 @@ function renderMedium(data, cli, group, latencyInfo) {
             type: 'stack', direction: 'column', alignItems: 'end',
             children: [
               {
-                type: 'stack', direction: 'row', alignItems: 'baseline', gap: 2,
+                type: 'stack', direction: 'row', alignItems: 'end', gap: 2,
                 children: [
                   { type: 'text', text: String(score), font: { size: 18, weight: 'bold' }, textColor: '#2C5FA6' },
                   { type: 'text', text: grade, font: { size: 10, weight: 'semibold' }, textColor: '#2C5FA6' },
