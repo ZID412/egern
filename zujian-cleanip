@@ -1,16 +1,19 @@
 // ZID412 - Egern通用脚本小组件 -  IP综合报告
 // 「综合报告」卡片（IPv4/IP归属/ASN/综合评分/纯净度/评分构成/风险检测/场景适配）
-// 数据源: cleanip.io，v4.3
+// 数据源: cleanip.io
+
+/*
+ * v4.4 · 官方卡片版
 
 
-var CARD_URL = 'https://cleanip.io/c/G72l.svg';
+var CARD_URL = 'https://cleanip.io/c/1jD7.svg';
 
 export default async function (ctx) {
   var group = (ctx.env && ctx.env.GROUP) || 'DIRECT';
   var cacheKey = 'cleanip_card_' + group;
   var t0 = Date.now();
 
-  // 读缓存
+  // 读缓存（仅作失败回退）
   var cached = null;
   try {
     cached = ctx.storage.getJSON(cacheKey);
@@ -23,12 +26,7 @@ export default async function (ctx) {
     cached = null;
   }
 
-  // 缓存很新鲜(<2分钟): 直接秒开
-  if (cached && (Date.now() - cached.ts) < 120000) {
-    return cardWidget(cached.svg, ctx.widgetFamily, '缓存 ' + cached.ageMin + 'min');
-  }
-
-  // 请求官方卡片
+  // 实时请求官方动态卡（每位访客显示自己的 IP）
   var svg = null;
   try {
     var r = await ctx.http.get(CARD_URL, { policy: group, timeout: 8000 });
@@ -43,7 +41,7 @@ export default async function (ctx) {
     return cardWidget(svg, ctx.widgetFamily, (Date.now() - t0) + 'ms');
   }
 
-  // 失败: 优先用缓存
+  // 请求失败: 优先用缓存（显示旧图，换节点后需等缓存过期/网络恢复）
   if (cached) return cardWidget(cached.svg, ctx.widgetFamily, '缓存 ' + cached.ageMin + 'min');
 
   // 全失败: 错误提示
