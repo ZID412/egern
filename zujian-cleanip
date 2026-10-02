@@ -1,43 +1,95 @@
 // ZID412 - Egern通用脚本小组件 -  IP综合报告
-// 布局复刻 cleanip.io「综合报告」卡片（IPv4/IP归属/ASN/综合评分/纯净度/评分构成/风险检测/场景适配）。
-// 数据源: cleanip.io（官方）
+// 「综合报告」卡片（IPv4/IP归属/ASN/综合评分/纯净度/评分构成/风险检测/场景适配）
+// 数据源: cleanip.io
 
 
 export default async function (ctx) {
-  try {
-    // 1) 基础数据: cleanip.io/cli（兜底 + 拿本机出口 IP）
-    var cli = await fetchCli(ctx);
+  var group = (ctx.env && ctx.env.GROUP) || 'DIRECT';
+  var cacheKey = 'cleanip_report_' + group;
+  var t0 = Date.now();
 
-    // 2) 完整报告: cleanip.io/{ip} 页面内嵌 __NUXT_DATA__（评分构成/风险明细/场景适配）
-    var report = null;
+  // 读缓存
+  var cached = null;
+  try {
+    cached = ctx.storage.getJSON(cacheKey);
+    if (cached && (Date.now() - cached.ts) < 3600000) {
+      cached.ageMin = Math.round((Date.now() - cached.ts) / 60000);
+    } else {
+      cached = null;
+    }
+  } catch (e) {
+    cached = null;
+  }
+
+  // 缓存很新鲜(<2分钟): 直接秒开，不发起网络请求
+  if (cached && (Date.now() - cached.ts) < 120000) {
+    cached.fromCache = true;
+    return renderWidget(cached, null, ctx.widgetFamily, group, '缓存 ' + cached.ageMin + 'min');
+  }
+
+  var report = null;
+  var cli = null;
+
+  // 阶段1: CLI 拿基础数据 + 本机出口 IP（4 秒超时）
+  try {
+    var r1 = await ctx.http.get('https://cleanip.io/cli', { policy: group, timeout: 4000 });
+    cli = parseCli(await r1.text());
+  } catch (e) {
+    cli = null;
+  }
+
+  // 阶段2: 完整报告页（用缓存 IP 或 CLI IP，4 秒超时）
+  var ip = (cached && cached.ip) || (cli && cli.ip);
+  if (ip) {
     try {
-      report = await fetchReport(ctx, cli.ip);
+      var r2 = await ctx.http.get('https://cleanip.io/' + ip, {
+        policy: group,
+        headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' },
+        timeout: 4000,
+      });
+      report = parseReport(await r2.text());
     } catch (e) {
       report = null;
     }
+  }
 
-    var data = report || fallbackData(cli);
-    return renderWidget(data, cli, ctx.widgetFamily);
-  } catch (e) {
+  var data = null;
+  if (report) {
+    data = report;
+    data.ts = Date.now();
+    try { ctx.storage.setJSON(cacheKey, data); } catch (e) {}
+  } else if (cli) {
+    data = fallbackData(cli);
+    data.ts = Date.now();
+    try { ctx.storage.setJSON(cacheKey, data); } catch (e) {}
+  } else if (cached) {
+    data = cached;
+  } else {
+    data = null;
+  }
+
+  var latencyInfo = '';
+  if (report) latencyInfo = (Date.now() - t0) + 'ms';
+  else if (cli) latencyInfo = (Date.now() - t0) + 'ms 精简';
+  else if (cached) latencyInfo = '缓存 ' + cached.ageMin + 'min';
+
+  if (!data) {
     return {
       type: 'widget',
       padding: 16,
       backgroundColor: '#FFFFFF',
       children: [
-        { type: 'text', text: '加载失败，请检查网络', font: { size: 'footnote' }, textColor: '#A14E50' },
-        { type: 'text', text: String(e && e.message ? e.message : ''), font: { size: 'caption2' }, textColor: '#8A9199', maxLines: 3 },
+        { type: 'text', text: '加载失败 · 请检查网络或策略组', font: { size: 'footnote', weight: 'semibold' }, textColor: '#A14E50' },
+        { type: 'text', text: '请求 cleanip.io 超时或被限流', font: { size: 'caption2' }, textColor: '#8A9199' },
+        { type: 'text', text: '可在脚本 env 填 GROUP=代理组名重试', font: { size: 'caption2' }, textColor: '#8A9199' },
       ],
     };
   }
+
+  return renderWidget(data, cli, ctx.widgetFamily, group, latencyInfo);
 }
 
-/* ==================== 数据获取 ==================== */
-
-async function fetchCli(ctx) {
-  var resp = await ctx.http.get('https://cleanip.io/cli', { timeout: 10000 });
-  var text = await resp.text();
-  return parseCli(text);
-}
+/* ==================== 数据解析 ==================== */
 
 function parseCli(text) {
   var clean = (text || '').replace(/\u001b\[[0-9;]*m/g, '');
@@ -62,15 +114,6 @@ function parseCli(text) {
     riskLabel: riskM ? riskM[2].replace(/\s*←.*$/m, '') : '',
     riskFlag: g(/^\s*风险标记\s+(.+)$/m),
   };
-}
-
-async function fetchReport(ctx, ip) {
-  var resp = await ctx.http.get('https://cleanip.io/' + ip, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' },
-    timeout: 20000,
-  });
-  var html = await resp.text();
-  return parseReport(html);
 }
 
 function extractNuxtJson(html) {
@@ -119,7 +162,6 @@ function parseReport(html) {
   var resolve = makeResolver(raw);
   var dataObj = raw[3];
 
-  // 找 q:{ip} 数据块
   var qIdx = null;
   for (var k in dataObj) {
     if (k.indexOf('q:') === 0) { qIdx = dataObj[k]; break; }
@@ -129,27 +171,19 @@ function parseReport(html) {
   var ipObj = raw[qBlock.ip];
   if (!ipObj || typeof ipObj !== 'object') throw new Error('bad ip block');
 
-  var geo = resolve(ipObj.geo) || {};
-  var network = resolve(ipObj.network) || {};
-  var risk = resolve(ipObj.risk) || {};
-  var purity = resolve(ipObj.purity) || {};
-  var env = resolve(ipObj.ip_environment) || {};
-  var checks = resolve(ipObj.checks) || [];
-  var ranks = resolve(qBlock.ranks) || {};
-
   return {
     ip: resolve(ipObj.ip),
-    geo: geo,
-    network: network,
-    risk: risk,
-    purity: purity,
-    env: env,
-    checks: checks,
-    ranks: ranks,
+    geo: resolve(ipObj.geo) || {},
+    network: resolve(ipObj.network) || {},
+    risk: resolve(ipObj.risk) || {},
+    purity: resolve(ipObj.purity) || {},
+    env: resolve(ipObj.ip_environment) || {},
+    checks: resolve(ipObj.checks) || [],
+    ranks: resolve(qBlock.ranks) || {},
   };
 }
 
-/* payload 解析失败时的降级数据（来自 CLI） */
+/* 报告页失败时的降级数据（来自 CLI） */
 function fallbackData(cli) {
   return {
     ip: cli.ip,
@@ -166,10 +200,10 @@ function fallbackData(cli) {
 
 /* ==================== 渲染 ==================== */
 
-function renderWidget(data, cli, family) {
-  if (family === 'systemSmall') return renderSmall(data, cli);
-  if (family === 'systemMedium') return renderMedium(data, cli);
-  return renderLarge(data, cli); // systemLarge / systemExtraLarge
+function renderWidget(data, cli, family, group, latencyInfo) {
+  if (family === 'systemSmall') return renderSmall(data, cli, group, latencyInfo);
+  if (family === 'systemMedium') return renderMedium(data, cli, group, latencyInfo);
+  return renderLarge(data, cli, group, latencyInfo);
 }
 
 function networkLabel(t) {
@@ -195,11 +229,9 @@ function verdictColor(v) {
   return '#5F6670';
 }
 
-/* 风险检测 verdict 短化: pass → 未检出/未命中 */
-function checkShort(verdict, status) {
+function checkShort(verdict) {
   if (!verdict) return '—';
-  if (verdict.indexOf('未检测到') === 0 || verdict.indexOf('非 ') === 0 || verdict.indexOf('无') === 0) return '未检出';
-  if (verdict.indexOf('未识别') === 0) return '未检出';
+  if (verdict.indexOf('未检测到') === 0 || verdict.indexOf('非 ') === 0 || verdict.indexOf('无') === 0 || verdict.indexOf('未识别') === 0) return '未检出';
   return verdict;
 }
 
@@ -229,9 +261,9 @@ function sectionTitle(t) {
 }
 
 /* ---------- 大组件: 完整复刻「综合报告」卡片 ---------- */
-function renderLarge(data, cli) {
-  var ip = data.ip || cli.ip || '—';
-  var ipVer = cli.ipVersion || 'IPv4';
+function renderLarge(data, cli, group, latencyInfo) {
+  var ip = data.ip || (cli && cli.ip) || '—';
+  var ipVer = (cli && cli.ipVersion) || 'IPv4';
   var location = '';
   if (data.geo && (data.geo.country || data.geo.region)) {
     var parts = [];
@@ -241,25 +273,30 @@ function renderLarge(data, cli) {
     if (data.geo.district) parts.push(data.geo.district);
     location = parts.join('·');
   }
-  if (!location) location = cli.location || '—';
+  if (!location && cli) location = cli.location || '—';
+  if (!location) location = '—';
 
   var asnLine = '';
   if (data.network && data.network.asn) {
     asnLine = 'AS' + data.network.asn + (data.network.asn_name ? ' - ' + data.network.asn_name : '');
   }
-  if (!asnLine) asnLine = cli.asnLine || '—';
+  if (!asnLine && cli) asnLine = cli.asnLine || '—';
+  if (!asnLine) asnLine = '—';
 
-  // 综合评分 = ip_environment（加权综合）; 纯净度 = purity
-  var score = data.env && data.env.score != null ? data.env.score : (cli.purityScore || '—');
-  var grade = data.env && data.env.grade ? data.env.grade : (cli.purityGrade || '');
-  var purityScore = data.purity && data.purity.score != null ? data.purity.score : (cli.purityScore || '—');
-  var purityGrade = data.purity && data.purity.grade ? data.purity.grade : (cli.purityGrade || '');
-  var netLabel = networkLabel((data.network && data.network.network_type) || cli.networkType);
-  var nativeLabel = (data.purity && data.purity.native_label) || cli.native || '原生IP';
-  var ipTypeLabel = (data.purity && data.purity.ip_type) || cli.ipType || '住宅IP';
+  var score = data.env && data.env.score != null ? data.env.score : ((cli && cli.purityScore) || '—');
+  var grade = data.env && data.env.grade ? data.env.grade : ((cli && cli.purityGrade) || '');
+  var purityScore = data.purity && data.purity.score != null ? data.purity.score : ((cli && cli.purityScore) || '—');
+  var purityGrade = data.purity && data.purity.grade ? data.purity.grade : ((cli && cli.purityGrade) || '');
+  var netLabel = networkLabel((data.network && data.network.network_type) || (cli && cli.networkType));
+  var nativeLabel = (data.purity && data.purity.native_label) || (cli && cli.native) || '原生IP';
+  var ipTypeLabel = (data.purity && data.purity.ip_type) || (cli && cli.ipType) || '住宅IP';
   var ipTypeShort = ipTypeLabel.indexOf('Residential') === 0 ? '住宅IP' : (ipTypeLabel.indexOf('Datacenter') === 0 ? '机房IP' : ipTypeLabel);
 
-  // 评分构成 4 格
+  var netType = (data.network && data.network.network_type) || (cli && cli.networkType);
+  var netLabel = networkLabel(netType);
+  // 降级数据只有 ISP/住宅 时，识别为家宽
+  if ((String(netType).toLowerCase() === 'isp') && (String(ipTypeLabel).indexOf('Residential') === 0 || String(ipTypeLabel).indexOf('住宅') === 0)) netLabel = '家宽';
+
   var repScore = '—', neiVal = '未测', provScore = '—', asnScore = '—';
   var repSub = '', asnSub = '';
   if (data.env && data.env.parts) {
@@ -271,26 +308,22 @@ function renderLarge(data, cli) {
       if (p.key === 'provenance') provScore = p.score != null ? String(p.score) : '—';
       if (p.key === 'asn_profile') { asnScore = p.score != null ? String(p.score) : '—'; asnSub = p.reason || ''; }
     }
-  } else {
-    // 降级: 用 CLI 可用数据占位
+  } else if (cli) {
     repScore = cli.purityScore || '—';
     asnScore = cli.homeProb ? cli.homeProb + '%' : '—';
     provScore = cli.riskScore ? '风险 ' + cli.riskScore : '—';
   }
 
-  // 风险检测（checks）5 格: VPN / 代理 / Tor / 滥用 / 风险因素
   var checksMap = {};
   for (var j = 0; j < (data.checks || []).length; j++) {
     var c = data.checks[j];
     checksMap[c.key] = c;
   }
-  function riskCell(name, c, fallbackV) {
+  function riskCell(name, c) {
     if (c) {
-      var v = checkShort(c.verdict, c.status);
-      var sub = (c.status === 'warn') ? '命中' : '';
-      return cell(name, v, sub || c.sources ? (c.sources && c.sources.length ? c.sources.slice(0, 2).join('/') : '') : '');
+      return cell(name, checkShort(c.verdict), (c.status === 'warn') ? '命中' : '');
     }
-    return cell(name, fallbackV || '未检出', '');
+    return cell(name, '未检出', '');
   }
   var riskFactors = (data.purity && data.purity.risk_factors) ? data.purity.risk_factors.length : 0;
   var dnsblCount = (data.risk && data.risk.dnsbl_listed) ? data.risk.dnsbl_listed.length : 0;
@@ -298,13 +331,12 @@ function renderLarge(data, cli) {
   var factorSub = '';
   if (dnsblCount > 0 && data.risk && data.risk.dnsbl_listed) factorSub = data.risk.dnsbl_listed.join(', ');
   else if (data.purity && data.purity.risk_factors && data.purity.risk_factors.length) factorSub = data.purity.risk_factors[0];
-  var r1 = riskCell('VPN', checksMap.vpn, '未检出');
-  var r2 = riskCell('代理', checksMap.proxy, '未检出');
-  var r3 = riskCell('Tor', checksMap.tor, '未检出');
-  var r4 = riskCell('滥用', checksMap.abuse_history, '未检出');
+  var r1 = riskCell('VPN', checksMap.vpn);
+  var r2 = riskCell('代理', checksMap.proxy);
+  var r3 = riskCell('Tor', checksMap.tor);
+  var r4 = riskCell('滥用', checksMap.abuse_history);
   var r5 = cell('风险因素', factorVal, factorSub);
 
-  // 场景适配 8 格（platform_safety）
   var ps = (data.purity && data.purity.platform_safety) || {};
   function scene(name, v) {
     return {
@@ -330,16 +362,14 @@ function renderLarge(data, cli) {
   var s8 = scene('游戏', ps.gaming || '');
 
   var children = [];
-  // 顶栏
   children.push({
     type: 'stack', direction: 'row', alignItems: 'center',
     children: [
       { type: 'text', text: 'IP综合报告', font: { size: 14, weight: 'bold' }, textColor: '#1A1B1C' },
       { type: 'spacer' },
-      { type: 'text', text: 'cleanip.io', font: { size: 10 }, textColor: '#8A9199' },
+      { type: 'text', text: 'cleanip.io · ' + (group === 'DIRECT' ? '直连' : group), font: { size: 9 }, textColor: '#8A9199' },
     ],
   });
-  // IP 行 + 右侧分数
   children.push({
     type: 'stack', direction: 'row', alignItems: 'center',
     children: [
@@ -372,16 +402,13 @@ function renderLarge(data, cli) {
       },
     ],
   });
-  // 归属地 / ASN
   children.push({ type: 'text', text: location, font: { size: 13, weight: 'semibold' }, textColor: '#1A1B1C', maxLines: 1, minScale: 0.6 });
   children.push({ type: 'text', text: asnLine, font: { size: 10 }, textColor: '#5F6670', maxLines: 1, minScale: 0.6 });
-  // 标签
   children.push({
     type: 'stack', direction: 'row', gap: 4, alignItems: 'center',
     children: [badge(ipVer, '#4F6B9A'), badge(nativeLabel.indexOf('Native') === 0 ? '原生IP' : nativeLabel, '#4F6B9A'), badge(ipTypeShort, '#4F6B9A')],
   });
 
-  // 评分构成
   children.push({ type: 'spacer', length: 4 });
   children.push(sectionTitle('评分构成'));
   children.push({
@@ -390,7 +417,6 @@ function renderLarge(data, cli) {
       cell('归属来源', provScore, ''), cell('网络画像', asnScore, asnSub)],
   });
 
-  // 风险检测
   children.push({ type: 'spacer', length: 4 });
   children.push(sectionTitle('风险检测'));
   children.push({
@@ -398,7 +424,6 @@ function renderLarge(data, cli) {
     children: [r1, r2, r3, r4, r5],
   });
 
-  // 场景适配
   children.push({ type: 'spacer', length: 4 });
   children.push(sectionTitle('场景适配'));
   children.push({
@@ -410,10 +435,9 @@ function renderLarge(data, cli) {
     children: [s5, s6, s7, s8],
   });
 
-  // 底部
   children.push({ type: 'spacer', length: 3 });
   children.push({ type: 'text', text: '完整报告 cleanip.io/ip/' + ip, font: { size: 9 }, textColor: '#8A9199' });
-  if (data.degraded) children.push({ type: 'text', text: '报告页未取到，展示精简数据', font: { size: 8 }, textColor: '#9A6A2F' });
+  if (data.degraded) children.push({ type: 'text', text: '报告页超时，展示 CLI 精简数据', font: { size: 8 }, textColor: '#9A6A2F' });
 
   return {
     type: 'widget',
@@ -424,15 +448,15 @@ function renderLarge(data, cli) {
   };
 }
 
-/* ---------- 中组件: 关键分数 ---------- */
-function renderMedium(data, cli) {
-  var ip = data.ip || cli.ip || '—';
-  var score = data.env && data.env.score != null ? data.env.score : (cli.purityScore || '—');
+/* ---------- 中组件 ---------- */
+function renderMedium(data, cli, group, latencyInfo) {
+  var ip = data.ip || (cli && cli.ip) || '—';
+  var score = data.env && data.env.score != null ? data.env.score : ((cli && cli.purityScore) || '—');
   var grade = data.env && data.env.grade ? data.env.grade : '';
-  var purityScore = data.purity && data.purity.score != null ? data.purity.score : (cli.purityScore || '—');
+  var purityScore = data.purity && data.purity.score != null ? data.purity.score : ((cli && cli.purityScore) || '—');
   var purityGrade = data.purity && data.purity.grade ? data.purity.grade : '';
-  var netLabel = networkLabel((data.network && data.network.network_type) || cli.networkType);
-  var location = (data.geo && (data.geo.country || data.geo.city)) ? ((data.geo.country || '') + (data.geo.region ? '·' + data.geo.region : '') + (data.geo.city ? '·' + data.geo.city : '')) : (cli.location || '');
+  var netLabel = networkLabel((data.network && data.network.network_type) || (cli && cli.networkType));
+  var location = (data.geo && (data.geo.country || data.geo.city)) ? ((data.geo.country || '') + (data.geo.region ? '·' + data.geo.region : '') + (data.geo.city ? '·' + data.geo.city : '')) : ((cli && cli.location) || '');
   return {
     type: 'widget',
     gap: 4,
@@ -444,7 +468,7 @@ function renderMedium(data, cli) {
         children: [
           { type: 'text', text: 'IP综合报告', font: { size: 13, weight: 'bold' }, textColor: '#1A1B1C' },
           { type: 'spacer' },
-          { type: 'text', text: 'cleanip.io', font: { size: 9 }, textColor: '#8A9199' },
+          { type: 'text', text: latencyInfo || 'cleanip.io', font: { size: 9 }, textColor: '#8A9199' },
         ],
       },
       {
@@ -484,11 +508,11 @@ function renderMedium(data, cli) {
   };
 }
 
-/* ---------- 小组件: 一句话 ---------- */
-function renderSmall(data, cli) {
-  var ip = data.ip || cli.ip || '—';
-  var score = data.env && data.env.score != null ? data.env.score : (cli.purityScore || '—');
-  var purityScore = data.purity && data.purity.score != null ? data.purity.score : (cli.purityScore || '—');
+/* ---------- 小组件 ---------- */
+function renderSmall(data, cli, group, latencyInfo) {
+  var ip = data.ip || (cli && cli.ip) || '—';
+  var score = data.env && data.env.score != null ? data.env.score : ((cli && cli.purityScore) || '—');
+  var purityScore = data.purity && data.purity.score != null ? data.purity.score : ((cli && cli.purityScore) || '—');
   return {
     type: 'widget',
     gap: 4,
