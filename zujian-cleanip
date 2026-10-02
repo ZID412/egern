@@ -1,11 +1,6 @@
 // ZID412 - Egern通用脚本小组件 -  IP综合报告
-// 综合报告（IPv4/IP归属/ASN/综合评分/纯净度/评分构成/风险检测/场景适配）
+// 「综合报告」卡片（IPv4/IP归属/ASN/综合评分/纯净度/评分构成/风险检测/场景适配）
 // 数据源: cleanip.io
-
-// 环境变量：
-// 名称：GROUP
-// 值：你的策略组名称
-
 
 
 export default async function (ctx) {
@@ -411,46 +406,34 @@ function renderLarge(data, cli, group, latencyInfo) {
       { type: 'text', text: 'cleanip.io · ' + (group === 'DIRECT' ? '直连' : group), font: { size: 9 }, textColor: '#8A9199', maxLines: 1 },
     ],
   });
-  // 2. 主信息行：左 IP，右 综合评分 + 纯净度
+  // 2. 主信息区：全部居中，不再左右分栏
   children.push({
-    type: 'stack', direction: 'row', alignItems: 'end',
+    type: 'stack', direction: 'column', alignItems: 'center', gap: 2,
     children: [
+      { type: 'text', text: '你的IP - ' + ipVer, font: { size: 9 }, textColor: '#8A9199' },
+      { type: 'text', text: ip, font: { size: 20, weight: 'bold' }, textColor: '#1A1B1C', maxLines: 1, minScale: 0.5, textAlign: 'center' },
       {
-        type: 'stack', direction: 'column', alignItems: 'start', flex: 1, gap: 0,
+        type: 'stack', direction: 'row', alignItems: 'end', gap: 3,
         children: [
-          { type: 'text', text: '你的IP - ' + ipVer, font: { size: 9 }, textColor: '#8A9199' },
-          { type: 'text', text: ip, font: { size: 19, weight: 'bold' }, textColor: '#1A1B1C', maxLines: 1, minScale: 0.5 },
+          { type: 'text', text: String(score), font: { size: 22, weight: 'bold' }, textColor: '#2C5FA6' },
+          { type: 'text', text: grade, font: { size: 11, weight: 'semibold' }, textColor: '#2C5FA6' },
         ],
       },
+      { type: 'text', text: '综合评分', font: { size: 9 }, textColor: '#8A9199', textAlign: 'center' },
       {
-        type: 'stack', direction: 'column', alignItems: 'end', gap: 0,
+        type: 'stack', direction: 'row', alignItems: 'center', gap: 3,
         children: [
-          {
-            type: 'stack', direction: 'row', alignItems: 'end', gap: 3,
-            children: [
-              { type: 'text', text: String(score), font: { size: 22, weight: 'bold' }, textColor: '#2C5FA6' },
-              { type: 'text', text: grade, font: { size: 11, weight: 'semibold' }, textColor: '#2C5FA6' },
-            ],
-          },
-          { type: 'text', text: '综合评分', font: { size: 9 }, textColor: '#8A9199', textAlign: 'right' },
-          {
-            type: 'stack', direction: 'row', alignItems: 'center', gap: 3,
-            children: [
-              badge(netLabel, '#35705A'),
-              { type: 'text', text: '纯净度 ' + String(purityScore) + (purityGrade ? ' ' + purityGrade : ''), font: { size: 9, weight: 'medium' }, textColor: '#5F6670', maxLines: 1 },
-            ],
-          },
+          badge(netLabel, '#35705A'),
+          { type: 'text', text: '纯净度 ' + String(purityScore) + (purityGrade ? ' ' + purityGrade : ''), font: { size: 9, weight: 'medium' }, textColor: '#5F6670', maxLines: 1 },
         ],
+      },
+      { type: 'text', text: location, font: { size: 12, weight: 'semibold' }, textColor: '#1A1B1C', maxLines: 1, minScale: 0.6, textAlign: 'center' },
+      { type: 'text', text: asnLine, font: { size: 9 }, textColor: '#5F6670', maxLines: 1, minScale: 0.6, textAlign: 'center' },
+      {
+        type: 'stack', direction: 'row', gap: 3, alignItems: 'center',
+        children: [badge(ipVer, '#4F6B9A'), badge(nativeLabel.indexOf('Native') === 0 ? '原生IP' : nativeLabel, '#4F6B9A'), badge(ipTypeShort, '#4F6B9A')],
       },
     ],
-  });
-  // 3. 归属地 / ASN
-  children.push({ type: 'text', text: location, font: { size: 12, weight: 'semibold' }, textColor: '#1A1B1C', maxLines: 1, minScale: 0.6 });
-  children.push({ type: 'text', text: asnLine, font: { size: 9 }, textColor: '#5F6670', maxLines: 1, minScale: 0.6 });
-  // 4. 标签行
-  children.push({
-    type: 'stack', direction: 'row', gap: 3, alignItems: 'center',
-    children: [badge(ipVer, '#4F6B9A'), badge(nativeLabel.indexOf('Native') === 0 ? '原生IP' : nativeLabel, '#4F6B9A'), badge(ipTypeShort, '#4F6B9A')],
   });
 
   // 5. 评分构成
@@ -484,8 +467,8 @@ function renderLarge(data, cli, group, latencyInfo) {
 
   // 8. 底部
   children.push({ type: 'spacer', length: 2 });
-  children.push({ type: 'text', text: '完整报告 cleanip.io/ip/' + ip, font: { size: 9 }, textColor: '#8A9199', maxLines: 1, minScale: 0.6 });
-  if (data.degraded) children.push({ type: 'text', text: '报告页超时，展示 CLI 精简数据', font: { size: 8 }, textColor: '#9A6A2F' });
+  children.push({ type: 'text', text: '完整报告 cleanip.io/ip/' + ip, font: { size: 9 }, textColor: '#8A9199', maxLines: 1, minScale: 0.6, textAlign: 'center' });
+  if (data.degraded) children.push({ type: 'text', text: '报告页超时，展示 CLI 精简数据', font: { size: 8 }, textColor: '#9A6A2F', textAlign: 'center' });
 
   return {
     type: 'widget',
@@ -520,28 +503,18 @@ function renderMedium(data, cli, group, latencyInfo) {
         ],
       },
       {
-        type: 'stack', direction: 'row', alignItems: 'center',
+        type: 'stack', direction: 'column', alignItems: 'center', gap: 1,
         children: [
+          { type: 'text', text: ip, font: { size: 17, weight: 'bold' }, textColor: '#1A1B1C', maxLines: 1, minScale: 0.5, textAlign: 'center' },
+          { type: 'text', text: location, font: { size: 10 }, textColor: '#5F6670', maxLines: 1, textAlign: 'center' },
           {
-            type: 'stack', direction: 'column', alignItems: 'start', flex: 1,
+            type: 'stack', direction: 'row', alignItems: 'end', gap: 2,
             children: [
-              { type: 'text', text: ip, font: { size: 17, weight: 'bold' }, textColor: '#1A1B1C', maxLines: 1, minScale: 0.5 },
-              { type: 'text', text: location, font: { size: 10 }, textColor: '#5F6670', maxLines: 1 },
+              { type: 'text', text: String(score), font: { size: 18, weight: 'bold' }, textColor: '#2C5FA6' },
+              { type: 'text', text: grade, font: { size: 10, weight: 'semibold' }, textColor: '#2C5FA6' },
             ],
           },
-          {
-            type: 'stack', direction: 'column', alignItems: 'end',
-            children: [
-              {
-                type: 'stack', direction: 'row', alignItems: 'end', gap: 2,
-                children: [
-                  { type: 'text', text: String(score), font: { size: 18, weight: 'bold' }, textColor: '#2C5FA6' },
-                  { type: 'text', text: grade, font: { size: 10, weight: 'semibold' }, textColor: '#2C5FA6' },
-                ],
-              },
-              { type: 'text', text: '纯净度 ' + String(purityScore) + (purityGrade ? ' ' + purityGrade : '') + ' · ' + netLabel, font: { size: 9 }, textColor: '#5F6670', textAlign: 'right' },
-            ],
-          },
+          { type: 'text', text: '纯净度 ' + String(purityScore) + (purityGrade ? ' ' + purityGrade : '') + ' · ' + netLabel, font: { size: 9 }, textColor: '#5F6670', textAlign: 'center', maxLines: 1, minScale: 0.6 },
         ],
       },
       {
@@ -567,10 +540,10 @@ function renderSmall(data, cli, group, latencyInfo) {
     padding: 12,
     backgroundColor: '#FFFFFF',
     children: [
-      { type: 'text', text: 'IP综合报告', font: { size: 12, weight: 'bold' }, textColor: '#1A1B1C' },
-      { type: 'text', text: ip, font: { size: 14, weight: 'bold' }, textColor: '#2C5FA6', maxLines: 1, minScale: 0.5 },
-      { type: 'text', text: '综合 ' + String(score) + ' · 纯净度 ' + String(purityScore), font: { size: 10 }, textColor: '#5F6670' },
-      { type: 'text', text: 'cleanip.io', font: { size: 9 }, textColor: '#8A9199' },
+      { type: 'text', text: 'IP综合报告', font: { size: 12, weight: 'bold' }, textColor: '#1A1B1C', textAlign: 'center' },
+      { type: 'text', text: ip, font: { size: 14, weight: 'bold' }, textColor: '#2C5FA6', maxLines: 1, minScale: 0.5, textAlign: 'center' },
+      { type: 'text', text: '综合 ' + String(score) + ' · 纯净度 ' + String(purityScore), font: { size: 10 }, textColor: '#5F6670', textAlign: 'center' },
+      { type: 'text', text: 'cleanip.io', font: { size: 9 }, textColor: '#8A9199', textAlign: 'center' },
     ],
   };
 }
