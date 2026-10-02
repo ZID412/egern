@@ -1,5 +1,4 @@
 // ZID412 - Egern通用脚本小组件 - ip纯净度
-// ZID412 - Egern Universal Script Widget - IP Purity
 // 实时展示当前出口 IP、网络类型（住宅原生/机房网络）、地理位置，并评估 IP 风险值与欺诈等级。
 
 // 环境变量：
