@@ -3,9 +3,10 @@
 // 数据源: cleanip.io
 
 /*
- * v5
+ * v5.1
 
-var CARD_URL = 'https://cleanip.io/c/1jD7.svg';
+
+var CARD_URL = 'https://cleanip.io/c/QjvG.svg';
 
 export default async function (ctx) {
   var group = (ctx.env && ctx.env.GROUP) || 'DIRECT';
