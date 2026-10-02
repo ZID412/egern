@@ -1,6 +1,6 @@
 // ZID412 - Egern通用脚本小组件 -  IP综合报告
 // 「综合报告」卡片（IPv4/IP归属/ASN/综合评分/纯净度/评分构成/风险检测/场景适配）
-// 数据源: cleanip.io
+// 数据源: cleanip.io，v4.3
 
 
 var CARD_URL = 'https://cleanip.io/c/G72l.svg';
@@ -59,7 +59,7 @@ export default async function (ctx) {
   };
 }
 
-/* 渲染卡片: 按 iOS 小组件标准画布等比适配，填满组件 */
+/* 渲染卡片: 改写 SVG 内部尺寸 + DSL 显式尺寸，双保险撑满组件 */
 function cardWidget(svg, family, latency) {
   var dims = svgDims(svg);
   // iOS 小组件标准画布尺寸(pt)
@@ -72,19 +72,35 @@ function cardWidget(svg, family, latency) {
   var w = Math.max(40, Math.round(dims.w * scale));
   var h = Math.max(40, Math.round(dims.h * scale));
 
+  // 双保险: 改写 SVG 内部 width/height（viewBox 不变，内容等比放大），
+  // 再配合 DSL 显式尺寸。无论 Egern 按哪种模式渲染都能撑满组件。
+  var resized = resizeSvg(svg, w, h);
+
   return {
     type: 'widget',
     padding: 0,
     children: [
       {
         type: 'image',
-        src: 'data:image/svg+xml;base64,' + utf8ToBase64(svg),
+        src: 'data:image/svg+xml;base64,' + utf8ToBase64(resized),
         width: w,
         height: h,
         resizeMode: 'contain',
       },
     ],
   };
+}
+
+/* 改写 <svg width="x" height="y"> 为目标尺寸，保留其余属性与 viewBox */
+function resizeSvg(svg, w, h) {
+  return svg.replace(/<svg([^>]*)>/, function (m, attrs) {
+    var a = attrs
+      .replace(/\swidth="[0-9.]+"/, ' width="' + w + '"')
+      .replace(/\sheight="[0-9.]+"/, ' height="' + h + '"');
+    if (a.indexOf('width=') < 0) a += ' width="' + w + '"';
+    if (a.indexOf('height=') < 0) a += ' height="' + h + '"';
+    return '<svg' + a + '>';
+  });
 }
 
 /* 从 SVG 标签解析渲染尺寸 width/height（缺失时用 viewBox 后两位） */
