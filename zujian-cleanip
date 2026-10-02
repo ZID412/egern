@@ -1,0 +1,504 @@
+// ZID412 - Egern通用脚本小组件 -  IP综合报告
+// 布局复刻 cleanip.io「综合报告」卡片（IPv4/IP归属/ASN/综合评分/纯净度/评分构成/风险检测/场景适配）。
+// 数据源: cleanip.io（官方）
+
+
+export default async function (ctx) {
+  try {
+    // 1) 基础数据: cleanip.io/cli（兜底 + 拿本机出口 IP）
+    var cli = await fetchCli(ctx);
+
+    // 2) 完整报告: cleanip.io/{ip} 页面内嵌 __NUXT_DATA__（评分构成/风险明细/场景适配）
+    var report = null;
+    try {
+      report = await fetchReport(ctx, cli.ip);
+    } catch (e) {
+      report = null;
+    }
+
+    var data = report || fallbackData(cli);
+    return renderWidget(data, cli, ctx.widgetFamily);
+  } catch (e) {
+    return {
+      type: 'widget',
+      padding: 16,
+      backgroundColor: '#FFFFFF',
+      children: [
+        { type: 'text', text: '加载失败，请检查网络', font: { size: 'footnote' }, textColor: '#A14E50' },
+        { type: 'text', text: String(e && e.message ? e.message : ''), font: { size: 'caption2' }, textColor: '#8A9199', maxLines: 3 },
+      ],
+    };
+  }
+}
+
+/* ==================== 数据获取 ==================== */
+
+async function fetchCli(ctx) {
+  var resp = await ctx.http.get('https://cleanip.io/cli', { timeout: 10000 });
+  var text = await resp.text();
+  return parseCli(text);
+}
+
+function parseCli(text) {
+  var clean = (text || '').replace(/\u001b\[[0-9;]*m/g, '');
+  function g(re) {
+    var m = clean.match(re);
+    return m ? m[1].trim() : '';
+  }
+  var purityM = clean.match(/^\s*纯净度评分\s+[\s\S]*?(\d+)\/100\s*\(([A-Za-z]+)\)/m);
+  var riskM = clean.match(/^\s*风险评分\s+(\d+)\/100\s*(.*)$/m);
+  return {
+    ip: g(/^\s*IP\s+(.+?)\s*\((IPv4|IPv6)\)/m),
+    ipVersion: g(/^\s*IP\s+.+?\((IPv4|IPv6)\)/m) || 'IPv4',
+    location: g(/^\s*归属地\s+(.+)$/m),
+    asnLine: g(/^\s*运营商\s*\/\s*ASN\s+(.+)$/m),
+    networkType: g(/^\s*网络类型\s+(.+)$/m),
+    ipType: g(/^\s*IP\s+类型\s+(.+)$/m),
+    native: g(/^\s*原生\s*\/\s*广播\s+(.+)$/m),
+    homeProb: g(/^\s*住宅概率\s+(\d+)%/m),
+    purityScore: purityM ? purityM[1] : '',
+    purityGrade: purityM ? purityM[2] : '',
+    riskScore: riskM ? riskM[1] : '',
+    riskLabel: riskM ? riskM[2].replace(/\s*←.*$/m, '') : '',
+    riskFlag: g(/^\s*风险标记\s+(.+)$/m),
+  };
+}
+
+async function fetchReport(ctx, ip) {
+  var resp = await ctx.http.get('https://cleanip.io/' + ip, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' },
+    timeout: 20000,
+  });
+  var html = await resp.text();
+  return parseReport(html);
+}
+
+function extractNuxtJson(html) {
+  var m = (html || '').match(/<script type="application\/json"[^>]*data-nuxt-data="nuxt-app"[^>]*id="__NUXT_DATA__">([\s\S]*?)<\/script>/);
+  return m ? m[1] : null;
+}
+
+/* 受控解析: 数字引用若指向原始数字则直接返回，不再继续解引用 */
+function makeResolver(raw) {
+  var cache = {};
+  var inProg = {};
+  function resolve(x, depth) {
+    depth = depth || 0;
+    if (depth > 15) return { __limit__: true };
+    if (typeof x === 'number' && x >= 0 && x < raw.length) {
+      var t = raw[x];
+      if (typeof t === 'number' || typeof t === 'boolean' || t === null) return t;
+      if (inProg[x]) return { __circular__: x };
+      if (cache[x] !== undefined) return cache[x];
+      inProg[x] = true;
+      cache[x] = resolve(t, depth + 1);
+      delete inProg[x];
+      return cache[x];
+    }
+    if (Array.isArray(x)) {
+      var arr = [];
+      for (var i = 0; i < x.length; i++) arr.push(resolve(x[i], depth + 1));
+      return arr;
+    }
+    if (typeof x === 'object' && x !== null) {
+      var obj = {};
+      for (var k in x) obj[k] = resolve(x[k], depth + 1);
+      return obj;
+    }
+    return x;
+  }
+  return resolve;
+}
+
+function parseReport(html) {
+  var jsonStr = extractNuxtJson(html);
+  if (!jsonStr) throw new Error('no nuxt data');
+  var raw = JSON.parse(jsonStr);
+  if (!raw || !Array.isArray(raw) || raw.length < 4) throw new Error('bad payload');
+
+  var resolve = makeResolver(raw);
+  var dataObj = raw[3];
+
+  // 找 q:{ip} 数据块
+  var qIdx = null;
+  for (var k in dataObj) {
+    if (k.indexOf('q:') === 0) { qIdx = dataObj[k]; break; }
+  }
+  if (qIdx === null) throw new Error('no q block');
+  var qBlock = raw[qIdx];
+  var ipObj = raw[qBlock.ip];
+  if (!ipObj || typeof ipObj !== 'object') throw new Error('bad ip block');
+
+  var geo = resolve(ipObj.geo) || {};
+  var network = resolve(ipObj.network) || {};
+  var risk = resolve(ipObj.risk) || {};
+  var purity = resolve(ipObj.purity) || {};
+  var env = resolve(ipObj.ip_environment) || {};
+  var checks = resolve(ipObj.checks) || [];
+  var ranks = resolve(qBlock.ranks) || {};
+
+  return {
+    ip: resolve(ipObj.ip),
+    geo: geo,
+    network: network,
+    risk: risk,
+    purity: purity,
+    env: env,
+    checks: checks,
+    ranks: ranks,
+  };
+}
+
+/* payload 解析失败时的降级数据（来自 CLI） */
+function fallbackData(cli) {
+  return {
+    ip: cli.ip,
+    geo: { country: '', region: '', city: '', district: '' },
+    network: { asn: '', asn_name: '', network_type: '', native_or_broadcast: '' },
+    risk: { risk_level: cli.riskFlag || '' },
+    purity: { score: cli.purityScore, grade: cli.purityGrade, native_label: cli.native, ip_type: cli.ipType },
+    env: null,
+    checks: [],
+    ranks: null,
+    degraded: true,
+  };
+}
+
+/* ==================== 渲染 ==================== */
+
+function renderWidget(data, cli, family) {
+  if (family === 'systemSmall') return renderSmall(data, cli);
+  if (family === 'systemMedium') return renderMedium(data, cli);
+  return renderLarge(data, cli); // systemLarge / systemExtraLarge
+}
+
+function networkLabel(t) {
+  if (!t) return '—';
+  var v = String(t).toLowerCase();
+  if (v === 'residential') return '家宽';
+  if (v === 'datacenter' || v === 'hosting') return '机房';
+  if (v === 'mobile') return '移动';
+  return t;
+}
+
+function verdictCN(v) {
+  if (v === 'safe') return '适合';
+  if (v === 'caution') return '可试';
+  if (v === 'unsafe') return '不宜';
+  return '未知';
+}
+
+function verdictColor(v) {
+  if (v === 'safe') return '#35705A';
+  if (v === 'caution') return '#9A6A2F';
+  if (v === 'unsafe') return '#A14E50';
+  return '#5F6670';
+}
+
+/* 风险检测 verdict 短化: pass → 未检出/未命中 */
+function checkShort(verdict, status) {
+  if (!verdict) return '—';
+  if (verdict.indexOf('未检测到') === 0 || verdict.indexOf('非 ') === 0 || verdict.indexOf('无') === 0) return '未检出';
+  if (verdict.indexOf('未识别') === 0) return '未检出';
+  return verdict;
+}
+
+function badge(text, color) {
+  return {
+    type: 'stack', direction: 'row', alignItems: 'center',
+    padding: [1, 6], borderRadius: 4, borderWidth: 1, borderColor: color + '59',
+    children: [{ type: 'text', text: text, font: { size: 10, weight: 'medium' }, textColor: color }],
+  };
+}
+
+function cell(label, value, sub) {
+  var children = [
+    { type: 'text', text: label, font: { size: 10 }, textColor: '#5F6670' },
+    { type: 'text', text: value, font: { size: 14, weight: 'bold' }, textColor: '#1A1B1C', maxLines: 1, minScale: 0.6 },
+  ];
+  if (sub) children.push({ type: 'text', text: sub, font: { size: 9 }, textColor: '#8A9199', maxLines: 1, minScale: 0.6 });
+  return {
+    type: 'stack', direction: 'column', alignItems: 'start', gap: 1, flex: 1,
+    padding: [4, 6], backgroundColor: '#F3F4F1', borderRadius: 6,
+    children: children,
+  };
+}
+
+function sectionTitle(t) {
+  return { type: 'text', text: t, font: { size: 12, weight: 'bold' }, textColor: '#2C3E50' };
+}
+
+/* ---------- 大组件: 完整复刻「综合报告」卡片 ---------- */
+function renderLarge(data, cli) {
+  var ip = data.ip || cli.ip || '—';
+  var ipVer = cli.ipVersion || 'IPv4';
+  var location = '';
+  if (data.geo && (data.geo.country || data.geo.region)) {
+    var parts = [];
+    if (data.geo.country) parts.push(data.geo.country);
+    if (data.geo.region) parts.push(data.geo.region);
+    if (data.geo.city) parts.push(data.geo.city);
+    if (data.geo.district) parts.push(data.geo.district);
+    location = parts.join('·');
+  }
+  if (!location) location = cli.location || '—';
+
+  var asnLine = '';
+  if (data.network && data.network.asn) {
+    asnLine = 'AS' + data.network.asn + (data.network.asn_name ? ' - ' + data.network.asn_name : '');
+  }
+  if (!asnLine) asnLine = cli.asnLine || '—';
+
+  // 综合评分 = ip_environment（加权综合）; 纯净度 = purity
+  var score = data.env && data.env.score != null ? data.env.score : (cli.purityScore || '—');
+  var grade = data.env && data.env.grade ? data.env.grade : (cli.purityGrade || '');
+  var purityScore = data.purity && data.purity.score != null ? data.purity.score : (cli.purityScore || '—');
+  var purityGrade = data.purity && data.purity.grade ? data.purity.grade : (cli.purityGrade || '');
+  var netLabel = networkLabel((data.network && data.network.network_type) || cli.networkType);
+  var nativeLabel = (data.purity && data.purity.native_label) || cli.native || '原生IP';
+  var ipTypeLabel = (data.purity && data.purity.ip_type) || cli.ipType || '住宅IP';
+  var ipTypeShort = ipTypeLabel.indexOf('Residential') === 0 ? '住宅IP' : (ipTypeLabel.indexOf('Datacenter') === 0 ? '机房IP' : ipTypeLabel);
+
+  // 评分构成 4 格
+  var repScore = '—', neiVal = '未测', provScore = '—', asnScore = '—';
+  var repSub = '', asnSub = '';
+  if (data.env && data.env.parts) {
+    var parts = data.env.parts;
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i];
+      if (p.key === 'reputation') { repScore = p.score != null ? String(p.score) : '—'; repSub = p.reason || ''; }
+      if (p.key === 'neighborhood') neiVal = p.score != null ? String(p.score) : '未测';
+      if (p.key === 'provenance') provScore = p.score != null ? String(p.score) : '—';
+      if (p.key === 'asn_profile') { asnScore = p.score != null ? String(p.score) : '—'; asnSub = p.reason || ''; }
+    }
+  } else {
+    // 降级: 用 CLI 可用数据占位
+    repScore = cli.purityScore || '—';
+    asnScore = cli.homeProb ? cli.homeProb + '%' : '—';
+    provScore = cli.riskScore ? '风险 ' + cli.riskScore : '—';
+  }
+
+  // 风险检测（checks）5 格: VPN / 代理 / Tor / 滥用 / 风险因素
+  var checksMap = {};
+  for (var j = 0; j < (data.checks || []).length; j++) {
+    var c = data.checks[j];
+    checksMap[c.key] = c;
+  }
+  function riskCell(name, c, fallbackV) {
+    if (c) {
+      var v = checkShort(c.verdict, c.status);
+      var sub = (c.status === 'warn') ? '命中' : '';
+      return cell(name, v, sub || c.sources ? (c.sources && c.sources.length ? c.sources.slice(0, 2).join('/') : '') : '');
+    }
+    return cell(name, fallbackV || '未检出', '');
+  }
+  var riskFactors = (data.purity && data.purity.risk_factors) ? data.purity.risk_factors.length : 0;
+  var dnsblCount = (data.risk && data.risk.dnsbl_listed) ? data.risk.dnsbl_listed.length : 0;
+  var factorVal = (riskFactors > 0 || dnsblCount > 0) ? ('命中 ' + Math.max(riskFactors, dnsblCount)) : '未命中';
+  var factorSub = '';
+  if (dnsblCount > 0 && data.risk && data.risk.dnsbl_listed) factorSub = data.risk.dnsbl_listed.join(', ');
+  else if (data.purity && data.purity.risk_factors && data.purity.risk_factors.length) factorSub = data.purity.risk_factors[0];
+  var r1 = riskCell('VPN', checksMap.vpn, '未检出');
+  var r2 = riskCell('代理', checksMap.proxy, '未检出');
+  var r3 = riskCell('Tor', checksMap.tor, '未检出');
+  var r4 = riskCell('滥用', checksMap.abuse_history, '未检出');
+  var r5 = cell('风险因素', factorVal, factorSub);
+
+  // 场景适配 8 格（platform_safety）
+  var ps = (data.purity && data.purity.platform_safety) || {};
+  function scene(name, v) {
+    return {
+      type: 'stack', direction: 'column', alignItems: 'start', gap: 0, flex: 1,
+      padding: [3, 5], backgroundColor: '#F3F4F1', borderRadius: 6,
+      children: [
+        { type: 'text', text: name, font: { size: 9 }, textColor: '#5F6670', maxLines: 1, minScale: 0.6 },
+        { type: 'text', text: verdictCN(v), font: { size: 11, weight: 'semibold' }, textColor: verdictColor(v) },
+      ],
+    };
+  }
+  var streamV = 'safe';
+  if (ps.netflix === 'unsafe' || ps.disney_plus === 'unsafe' || ps.youtube === 'unsafe') streamV = 'unsafe';
+  else if (ps.netflix === 'caution' || ps.disney_plus === 'caution' || ps.youtube === 'caution') streamV = 'caution';
+  else if (!ps.netflix && !ps.disney_plus && !ps.youtube) streamV = '';
+  var s1 = scene('AI应用', ps.ai_subscription || '');
+  var s2 = scene('流媒体', streamV);
+  var s3 = scene('TikTok', ps.tiktok || '');
+  var s4 = scene('X', ps.twitter || '');
+  var s5 = scene('Facebook', ps.facebook || '');
+  var s6 = scene('跨境电商', ps.ecommerce || '');
+  var s7 = scene('支付', ps.payment || '');
+  var s8 = scene('游戏', ps.gaming || '');
+
+  var children = [];
+  // 顶栏
+  children.push({
+    type: 'stack', direction: 'row', alignItems: 'center',
+    children: [
+      { type: 'text', text: 'IP综合报告', font: { size: 14, weight: 'bold' }, textColor: '#1A1B1C' },
+      { type: 'spacer' },
+      { type: 'text', text: 'cleanip.io', font: { size: 10 }, textColor: '#8A9199' },
+    ],
+  });
+  // IP 行 + 右侧分数
+  children.push({
+    type: 'stack', direction: 'row', alignItems: 'center',
+    children: [
+      {
+        type: 'stack', direction: 'column', alignItems: 'start', flex: 1, gap: 0,
+        children: [
+          { type: 'text', text: '你的IP - ' + ipVer, font: { size: 9 }, textColor: '#8A9199' },
+          { type: 'text', text: ip, font: { size: 20, weight: 'bold' }, textColor: '#1A1B1C', maxLines: 1, minScale: 0.5 },
+        ],
+      },
+      {
+        type: 'stack', direction: 'column', alignItems: 'end', gap: 1,
+        children: [
+          {
+            type: 'stack', direction: 'row', alignItems: 'baseline', gap: 2,
+            children: [
+              { type: 'text', text: String(score), font: { size: 20, weight: 'bold' }, textColor: '#2C5FA6' },
+              { type: 'text', text: grade, font: { size: 11, weight: 'semibold' }, textColor: '#2C5FA6' },
+            ],
+          },
+          { type: 'text', text: '综合评分', font: { size: 9 }, textColor: '#8A9199', textAlign: 'right' },
+          {
+            type: 'stack', direction: 'row', alignItems: 'center', gap: 3,
+            children: [
+              badge(netLabel, '#35705A'),
+              { type: 'text', text: '纯净度 ' + String(purityScore) + (purityGrade ? ' ' + purityGrade : ''), font: { size: 10, weight: 'medium' }, textColor: '#5F6670' },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  // 归属地 / ASN
+  children.push({ type: 'text', text: location, font: { size: 13, weight: 'semibold' }, textColor: '#1A1B1C', maxLines: 1, minScale: 0.6 });
+  children.push({ type: 'text', text: asnLine, font: { size: 10 }, textColor: '#5F6670', maxLines: 1, minScale: 0.6 });
+  // 标签
+  children.push({
+    type: 'stack', direction: 'row', gap: 4, alignItems: 'center',
+    children: [badge(ipVer, '#4F6B9A'), badge(nativeLabel.indexOf('Native') === 0 ? '原生IP' : nativeLabel, '#4F6B9A'), badge(ipTypeShort, '#4F6B9A')],
+  });
+
+  // 评分构成
+  children.push({ type: 'spacer', length: 4 });
+  children.push(sectionTitle('评分构成'));
+  children.push({
+    type: 'stack', direction: 'row', gap: 4, alignItems: 'start',
+    children: [cell('信誉记录', repScore, repSub), cell('邻居网段', neiVal, ''),
+      cell('归属来源', provScore, ''), cell('网络画像', asnScore, asnSub)],
+  });
+
+  // 风险检测
+  children.push({ type: 'spacer', length: 4 });
+  children.push(sectionTitle('风险检测'));
+  children.push({
+    type: 'stack', direction: 'row', gap: 4, alignItems: 'start',
+    children: [r1, r2, r3, r4, r5],
+  });
+
+  // 场景适配
+  children.push({ type: 'spacer', length: 4 });
+  children.push(sectionTitle('场景适配'));
+  children.push({
+    type: 'stack', direction: 'row', gap: 4, alignItems: 'start',
+    children: [s1, s2, s3, s4],
+  });
+  children.push({
+    type: 'stack', direction: 'row', gap: 4, alignItems: 'start',
+    children: [s5, s6, s7, s8],
+  });
+
+  // 底部
+  children.push({ type: 'spacer', length: 3 });
+  children.push({ type: 'text', text: '完整报告 cleanip.io/ip/' + ip, font: { size: 9 }, textColor: '#8A9199' });
+  if (data.degraded) children.push({ type: 'text', text: '报告页未取到，展示精简数据', font: { size: 8 }, textColor: '#9A6A2F' });
+
+  return {
+    type: 'widget',
+    gap: 3,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    children: children,
+  };
+}
+
+/* ---------- 中组件: 关键分数 ---------- */
+function renderMedium(data, cli) {
+  var ip = data.ip || cli.ip || '—';
+  var score = data.env && data.env.score != null ? data.env.score : (cli.purityScore || '—');
+  var grade = data.env && data.env.grade ? data.env.grade : '';
+  var purityScore = data.purity && data.purity.score != null ? data.purity.score : (cli.purityScore || '—');
+  var purityGrade = data.purity && data.purity.grade ? data.purity.grade : '';
+  var netLabel = networkLabel((data.network && data.network.network_type) || cli.networkType);
+  var location = (data.geo && (data.geo.country || data.geo.city)) ? ((data.geo.country || '') + (data.geo.region ? '·' + data.geo.region : '') + (data.geo.city ? '·' + data.geo.city : '')) : (cli.location || '');
+  return {
+    type: 'widget',
+    gap: 4,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    children: [
+      {
+        type: 'stack', direction: 'row', alignItems: 'center',
+        children: [
+          { type: 'text', text: 'IP综合报告', font: { size: 13, weight: 'bold' }, textColor: '#1A1B1C' },
+          { type: 'spacer' },
+          { type: 'text', text: 'cleanip.io', font: { size: 9 }, textColor: '#8A9199' },
+        ],
+      },
+      {
+        type: 'stack', direction: 'row', alignItems: 'center',
+        children: [
+          {
+            type: 'stack', direction: 'column', alignItems: 'start', flex: 1,
+            children: [
+              { type: 'text', text: ip, font: { size: 17, weight: 'bold' }, textColor: '#1A1B1C', maxLines: 1, minScale: 0.5 },
+              { type: 'text', text: location, font: { size: 10 }, textColor: '#5F6670', maxLines: 1 },
+            ],
+          },
+          {
+            type: 'stack', direction: 'column', alignItems: 'end',
+            children: [
+              {
+                type: 'stack', direction: 'row', alignItems: 'baseline', gap: 2,
+                children: [
+                  { type: 'text', text: String(score), font: { size: 18, weight: 'bold' }, textColor: '#2C5FA6' },
+                  { type: 'text', text: grade, font: { size: 10, weight: 'semibold' }, textColor: '#2C5FA6' },
+                ],
+              },
+              { type: 'text', text: '纯净度 ' + String(purityScore) + (purityGrade ? ' ' + purityGrade : '') + ' · ' + netLabel, font: { size: 9 }, textColor: '#5F6670', textAlign: 'right' },
+            ],
+          },
+        ],
+      },
+      {
+        type: 'stack', direction: 'row', gap: 4,
+        children: [
+          cell('综合评分', String(score) + (grade ? ' ' + grade : ''), ''),
+          cell('纯净度', String(purityScore) + (purityGrade ? ' ' + purityGrade : ''), ''),
+          cell('网络类型', netLabel, ''),
+        ],
+      },
+    ],
+  };
+}
+
+/* ---------- 小组件: 一句话 ---------- */
+function renderSmall(data, cli) {
+  var ip = data.ip || cli.ip || '—';
+  var score = data.env && data.env.score != null ? data.env.score : (cli.purityScore || '—');
+  var purityScore = data.purity && data.purity.score != null ? data.purity.score : (cli.purityScore || '—');
+  return {
+    type: 'widget',
+    gap: 4,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    children: [
+      { type: 'text', text: 'IP综合报告', font: { size: 12, weight: 'bold' }, textColor: '#1A1B1C' },
+      { type: 'text', text: ip, font: { size: 14, weight: 'bold' }, textColor: '#2C5FA6', maxLines: 1, minScale: 0.5 },
+      { type: 'text', text: '综合 ' + String(score) + ' · 纯净度 ' + String(purityScore), font: { size: 10 }, textColor: '#5F6670' },
+      { type: 'text', text: 'cleanip.io', font: { size: 9 }, textColor: '#8A9199' },
+    ],
+  };
+}
