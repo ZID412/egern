@@ -3,30 +3,15 @@
 // 数据源: cleanip.io
 
 /*
- * v4.4 · 官方卡片版
-
+ * v5
 
 var CARD_URL = 'https://cleanip.io/c/1jD7.svg';
 
 export default async function (ctx) {
   var group = (ctx.env && ctx.env.GROUP) || 'DIRECT';
-  var cacheKey = 'cleanip_card_' + group;
   var t0 = Date.now();
 
-  // 读缓存（仅作失败回退）
-  var cached = null;
-  try {
-    cached = ctx.storage.getJSON(cacheKey);
-    if (cached && cached.svg && (Date.now() - cached.ts) < 3600000) {
-      cached.ageMin = Math.round((Date.now() - cached.ts) / 60000);
-    } else {
-      cached = null;
-    }
-  } catch (e) {
-    cached = null;
-  }
-
-  // 实时请求官方动态卡（每位访客显示自己的 IP）
+  // 实时请求官方动态卡（每位访客显示自己的 IP；无缓存，绝不显示旧图）
   var svg = null;
   try {
     var r = await ctx.http.get(CARD_URL, { policy: group, timeout: 8000 });
@@ -37,22 +22,18 @@ export default async function (ctx) {
   }
 
   if (svg) {
-    try { ctx.storage.setJSON(cacheKey, { svg: svg, ts: Date.now() }); } catch (e) {}
     return cardWidget(svg, ctx.widgetFamily, (Date.now() - t0) + 'ms');
   }
 
-  // 请求失败: 优先用缓存（显示旧图，换节点后需等缓存过期/网络恢复）
-  if (cached) return cardWidget(cached.svg, ctx.widgetFamily, '缓存 ' + cached.ageMin + 'min');
-
-  // 全失败: 错误提示
+  // 失败: 错误提示（不含旧数据）
   return {
     type: 'widget',
     padding: 14,
     gap: 4,
     children: [
       { type: 'text', text: '卡片加载失败', font: { size: 'footnote', weight: 'semibold' }, textColor: '#A14E50', textAlign: 'center' },
-      { type: 'text', text: 'cleanip.io 超时或被限流', font: { size: 'caption2' }, textColor: '#8A9199', textAlign: 'center' },
-      { type: 'text', text: '可在脚本 env 填 GROUP=代理组名重试', font: { size: 'caption2' }, textColor: '#8A9199', textAlign: 'center' },
+      { type: 'text', text: 'cleanip.io 请求超时或被限流', font: { size: 'caption2' }, textColor: '#8A9199', textAlign: 'center' },
+      { type: 'text', text: '删掉组件重加即可重试', font: { size: 'caption2' }, textColor: '#8A9199', textAlign: 'center' },
     ],
   };
 }
