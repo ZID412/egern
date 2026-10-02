@@ -59,22 +59,22 @@ export default async function (ctx) {
   };
 }
 
-/* 渲染卡片: 解析 SVG 尺寸，按组件可用空间等比缩放，完整显示 */
+/* 渲染卡片: 按 iOS 小组件标准画布等比适配，填满组件 */
 function cardWidget(svg, family, latency) {
   var dims = svgDims(svg);
-  // 各尺寸组件的可用宽高（pt，扣除左右 padding 12）
-  var availW, availH;
-  if (family === 'systemMedium') { availW = 317; availH = 143; }
-  else if (family === 'systemSmall') { availW = 143; availH = 143; }
-  else { availW = 317; availH = 333; } // systemLarge / ExtraLarge 按大号处理
+  // iOS 小组件标准画布尺寸(pt)
+  var cw, ch;
+  if (family === 'systemMedium') { cw = 329; ch = 155; }
+  else if (family === 'systemSmall') { cw = 155; ch = 155; }
+  else { cw = 329; ch = 345; } // systemLarge / ExtraLarge
 
-  var scale = Math.min(availW / dims.w, availH / dims.h);
+  var scale = Math.min(cw / dims.w, ch / dims.h);
   var w = Math.max(40, Math.round(dims.w * scale));
   var h = Math.max(40, Math.round(dims.h * scale));
 
   return {
     type: 'widget',
-    padding: 6,
+    padding: 0,
     children: [
       {
         type: 'image',
