@@ -2,6 +2,9 @@
 // 「综合报告」卡片（IPv4/IP归属/ASN/综合评分/纯净度/评分构成/风险检测/场景适配）
 // 数据源: cleanip.io
 
+
+var CARD_URL = 'https://cleanip.io/c/G72l.svg';
+
 export default async function (ctx) {
   var group = (ctx.env && ctx.env.GROUP) || 'DIRECT';
   var cacheKey = 'cleanip_card_' + group;
@@ -22,13 +25,13 @@ export default async function (ctx) {
 
   // 缓存很新鲜(<2分钟): 直接秒开
   if (cached && (Date.now() - cached.ts) < 120000) {
-    return cardWidget(cached.svg, '缓存 ' + cached.ageMin + 'min');
+    return cardWidget(cached.svg, ctx.widgetFamily, '缓存 ' + cached.ageMin + 'min');
   }
 
-  // 请求官方卡片（按当前出口 IP 渲染）
+  // 请求官方卡片
   var svg = null;
   try {
-    var r = await ctx.http.get('https://cleanip.io/c/RHEK.svg', { policy: group, timeout: 8000 });
+    var r = await ctx.http.get(CARD_URL, { policy: group, timeout: 8000 });
     var t = await r.text();
     if (t && t.indexOf('<svg') > -1) svg = t;
   } catch (e) {
@@ -37,11 +40,11 @@ export default async function (ctx) {
 
   if (svg) {
     try { ctx.storage.setJSON(cacheKey, { svg: svg, ts: Date.now() }); } catch (e) {}
-    return cardWidget(svg, (Date.now() - t0) + 'ms');
+    return cardWidget(svg, ctx.widgetFamily, (Date.now() - t0) + 'ms');
   }
 
   // 失败: 优先用缓存
-  if (cached) return cardWidget(cached.svg, '缓存 ' + cached.ageMin + 'min');
+  if (cached) return cardWidget(cached.svg, ctx.widgetFamily, '缓存 ' + cached.ageMin + 'min');
 
   // 全失败: 错误提示
   return {
@@ -56,8 +59,19 @@ export default async function (ctx) {
   };
 }
 
-/* 渲染卡片: 一张官方 SVG 图片占满组件 */
-function cardWidget(svg, latency) {
+/* 渲染卡片: 解析 SVG 尺寸，按组件可用空间等比缩放，完整显示 */
+function cardWidget(svg, family, latency) {
+  var dims = svgDims(svg);
+  // 各尺寸组件的可用宽高（pt，扣除左右 padding 12）
+  var availW, availH;
+  if (family === 'systemMedium') { availW = 317; availH = 143; }
+  else if (family === 'systemSmall') { availW = 143; availH = 143; }
+  else { availW = 317; availH = 333; } // systemLarge / ExtraLarge 按大号处理
+
+  var scale = Math.min(availW / dims.w, availH / dims.h);
+  var w = Math.max(40, Math.round(dims.w * scale));
+  var h = Math.max(40, Math.round(dims.h * scale));
+
   return {
     type: 'widget',
     padding: 6,
@@ -65,11 +79,27 @@ function cardWidget(svg, latency) {
       {
         type: 'image',
         src: 'data:image/svg+xml;base64,' + utf8ToBase64(svg),
-        flex: 1,
+        width: w,
+        height: h,
         resizeMode: 'contain',
       },
     ],
   };
+}
+
+/* 从 SVG 标签解析渲染尺寸 width/height（缺失时用 viewBox 后两位） */
+function svgDims(svg) {
+  var w = 480, h = 400;
+  var m = svg.match(/<svg[^>]*\swidth="([0-9.]+)"[^>]*\sheight="([0-9.]+)"/);
+  if (!m) m = svg.match(/<svg[^>]*\sheight="([0-9.]+)"[^>]*\swidth="([0-9.]+)"/);
+  if (m) {
+    w = parseFloat(m[1]); h = parseFloat(m[2]);
+  } else {
+    var v = svg.match(/viewBox="\s*([0-9.+-]+)\s+([0-9.+-]+)\s+([0-9.]+)\s+([0-9.]+)"/);
+    if (v) { w = parseFloat(v[3]); h = parseFloat(v[4]); }
+  }
+  if (!w || !h || w <= 0 || h <= 0) { w = 480; h = 400; }
+  return { w: w, h: h };
 }
 
 /* UTF-8 字符串 → Base64（兼容无 btoa 的 JS 环境） */
