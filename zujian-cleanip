@@ -2,6 +2,10 @@
 // 「综合报告」卡片（IPv4/IP归属/ASN/综合评分/纯净度/评分构成/风险检测/场景适配）
 // 数据源: cleanip.io
 
+// 环境变量：
+// 名称：GROUP
+// 值：你的策略组名称
+
 
 export default async function (ctx) {
   var group = (ctx.env && ctx.env.GROUP) || 'DIRECT';
