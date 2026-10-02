@@ -3,8 +3,7 @@
 // 数据源: cleanip.io
 
 /*
- * v5.1
-
+ * v8
 
 var CARD_URL = 'https://cleanip.io/c/QjvG.svg';
 
@@ -12,29 +11,34 @@ export default async function (ctx) {
   var group = (ctx.env && ctx.env.GROUP) || 'DIRECT';
   var t0 = Date.now();
 
-  // 实时请求官方动态卡（每位访客显示自己的 IP；无缓存，绝不显示旧图）
+  // 实时请求官方动态卡
   var svg = null;
+  var err = '';
   try {
     var r = await ctx.http.get(CARD_URL, { policy: group, timeout: 8000 });
     var t = await r.text();
-    if (t && t.indexOf('<svg') > -1) svg = t;
+    if (t && t.indexOf('<svg') > -1) {
+      svg = t;
+    } else {
+      err = '非SVG响应 (HTTP ' + (r.status || '?') + ')';
+    }
   } catch (e) {
-    svg = null;
+    err = '请求异常: ' + (e && e.message ? e.message : String(e));
   }
 
   if (svg) {
     return cardWidget(svg, ctx.widgetFamily, (Date.now() - t0) + 'ms');
   }
 
-  // 失败: 错误提示（不含旧数据）
+  // 失败: 显示具体原因（方便定位），不含旧数据
   return {
     type: 'widget',
     padding: 14,
     gap: 4,
     children: [
       { type: 'text', text: '卡片加载失败', font: { size: 'footnote', weight: 'semibold' }, textColor: '#A14E50', textAlign: 'center' },
-      { type: 'text', text: 'cleanip.io 请求超时或被限流', font: { size: 'caption2' }, textColor: '#8A9199', textAlign: 'center' },
-      { type: 'text', text: '删掉组件重加即可重试', font: { size: 'caption2' }, textColor: '#8A9199', textAlign: 'center' },
+      { type: 'text', text: err, font: { size: 'caption2' }, textColor: '#8A9199', textAlign: 'center' },
+      { type: 'text', text: 'GROUP=' + group + ' · 删组件重加可重试', font: { size: 'caption2' }, textColor: '#8A9199', textAlign: 'center' },
     ],
   };
 }
