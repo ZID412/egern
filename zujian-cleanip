@@ -2,17 +2,16 @@
 // 「综合报告」卡片（IPv4/IP归属/ASN/综合评分/纯净度/评分构成/风险检测/场景适配）
 // 数据源: cleanip.io
 
-
 export default async function (ctx) {
   var group = (ctx.env && ctx.env.GROUP) || 'DIRECT';
-  var cacheKey = 'cleanip_report_' + group;
+  var cacheKey = 'cleanip_card_' + group;
   var t0 = Date.now();
 
   // 读缓存
   var cached = null;
   try {
     cached = ctx.storage.getJSON(cacheKey);
-    if (cached && (Date.now() - cached.ts) < 3600000) {
+    if (cached && cached.svg && (Date.now() - cached.ts) < 3600000) {
       cached.ageMin = Math.round((Date.now() - cached.ts) / 60000);
     } else {
       cached = null;
@@ -21,529 +20,86 @@ export default async function (ctx) {
     cached = null;
   }
 
-  // 缓存很新鲜(<2分钟): 直接秒开，不发起网络请求
+  // 缓存很新鲜(<2分钟): 直接秒开
   if (cached && (Date.now() - cached.ts) < 120000) {
-    cached.fromCache = true;
-    return safeRender(renderWidget, cached, null, ctx.widgetFamily, group, '缓存 ' + cached.ageMin + 'min');
+    return cardWidget(cached.svg, '缓存 ' + cached.ageMin + 'min');
   }
 
-  var report = null;
-  var cli = null;
-  var cliIp = (cached && cached.ip) || '';
-
-  if (cliIp) {
-    // 有缓存 IP: CLI 与报告页并发，各 5 秒超时，总预算约 5 秒
-    var p1 = ctx.http.get('https://cleanip.io/cli', { policy: group, timeout: 5000 })
-      .then(function (r) { return r.text(); })
-      .then(function (t) { cli = parseCli(t); })
-      .catch(function () { cli = null; });
-    var p2 = ctx.http.get('https://cleanip.io/' + cliIp, {
-      policy: group,
-      timeout: 5000,
-    })
-      .then(function (r) { return r.text(); })
-      .then(function (t) { report = parseReport(t); })
-      .catch(function () { report = null; });
-    try {
-      await Promise.all([p1, p2]);
-    } catch (e) { /* 已在各分支兜底 */ }
-  } else {
-    // 无缓存: CLI 先拿 IP（3 秒），再请求报告页（4 秒），总预算约 7 秒
-    try {
-      var r1 = await ctx.http.get('https://cleanip.io/cli', { policy: group, timeout: 3000 });
-      cli = parseCli(await r1.text());
-    } catch (e) {
-      cli = null;
-    }
-    if (cli && cli.ip) {
-      try {
-        var r2 = await ctx.http.get('https://cleanip.io/' + cli.ip, { policy: group, timeout: 4000 });
-        report = parseReport(await r2.text());
-      } catch (e) {
-        report = null;
-      }
-    }
-  }
-
-  var data = null;
-  if (report) {
-    data = report;
-    data.ts = Date.now();
-    try { ctx.storage.setJSON(cacheKey, data); } catch (e) {}
-  } else if (cli) {
-    data = fallbackData(cli);
-    data.ts = Date.now();
-    try { ctx.storage.setJSON(cacheKey, data); } catch (e) {}
-  } else if (cached) {
-    data = cached;
-  } else {
-    data = null;
-  }
-
-  var latencyInfo = '';
-  if (report) latencyInfo = (Date.now() - t0) + 'ms';
-  else if (cli) latencyInfo = (Date.now() - t0) + 'ms 精简';
-  else if (cached) latencyInfo = '缓存 ' + cached.ageMin + 'min';
-
-  if (!data) {
-    return {
-      type: 'widget',
-      padding: 16,
-      backgroundColor: '#FFFFFF',
-      children: [
-        { type: 'text', text: '加载失败 · 请检查网络或策略组', font: { size: 'footnote', weight: 'semibold' }, textColor: '#A14E50' },
-        { type: 'text', text: '请求 cleanip.io 超时或被限流', font: { size: 'caption2' }, textColor: '#8A9199' },
-        { type: 'text', text: '可在脚本 env 填 GROUP=代理组名重试', font: { size: 'caption2' }, textColor: '#8A9199' },
-      ],
-    };
-  }
-
-  return safeRender(renderWidget, data, cli, ctx.widgetFamily, group, latencyInfo);
-}
-
-/* 渲染保险：任何意外异常都输出可见文案，绝不白屏 */
-function safeRender(fn, a, b, c, d, e) {
+  // 请求官方卡片（按当前出口 IP 渲染）
+  var svg = null;
   try {
-    return fn(a, b, c, d, e);
-  } catch (err) {
-    var msg = '渲染出错';
-    try { msg = String(err && err.message ? err.message : err); } catch (x) {}
-    return {
-      type: 'widget',
-      padding: 16,
-      gap: 4,
-      backgroundColor: '#FFFFFF',
-      children: [
-        { type: 'text', text: '渲染出错 · 见日志', font: { size: 'footnote', weight: 'semibold' }, textColor: '#A14E50' },
-        { type: 'text', text: msg, font: { size: 'caption2' }, textColor: '#8A9199', maxLines: 3, minScale: 0.6 },
-      ],
-    };
-  }
-}
-
-/* ==================== 数据解析 ==================== */
-
-function parseCli(text) {
-  var clean = (text || '').replace(/\u001b\[[0-9;]*m/g, '');
-  function g(re) {
-    var m = clean.match(re);
-    return m ? m[1].trim() : '';
-  }
-  var purityM = clean.match(/^\s*纯净度评分\s+[\s\S]*?(\d+)\/100\s*\(([A-Za-z]+)\)/m);
-  var riskM = clean.match(/^\s*风险评分\s+(\d+)\/100\s*(.*)$/m);
-  return {
-    ip: g(/^\s*IP\s+(.+?)\s*\((IPv4|IPv6)\)/m),
-    ipVersion: g(/^\s*IP\s+.+?\((IPv4|IPv6)\)/m) || 'IPv4',
-    location: g(/^\s*归属地\s+(.+)$/m),
-    asnLine: g(/^\s*运营商\s*\/\s*ASN\s+(.+)$/m),
-    networkType: g(/^\s*网络类型\s+(.+)$/m),
-    ipType: g(/^\s*IP\s+类型\s+(.+)$/m),
-    native: g(/^\s*原生\s*\/\s*广播\s+(.+)$/m),
-    homeProb: g(/^\s*住宅概率\s+(\d+)%/m),
-    purityScore: purityM ? purityM[1] : '',
-    purityGrade: purityM ? purityM[2] : '',
-    riskScore: riskM ? riskM[1] : '',
-    riskLabel: riskM ? riskM[2].replace(/\s*←.*$/m, '') : '',
-    riskFlag: g(/^\s*风险标记\s+(.+)$/m),
-  };
-}
-
-function extractNuxtJson(html) {
-  var m = (html || '').match(/<script type="application\/json"[^>]*data-nuxt-data="nuxt-app"[^>]*id="__NUXT_DATA__">([\s\S]*?)<\/script>/);
-  return m ? m[1] : null;
-}
-
-/* 受控解析: 数字引用若指向原始数字则直接返回，不再继续解引用 */
-function makeResolver(raw) {
-  var cache = {};
-  var inProg = {};
-  function resolve(x, depth) {
-    depth = depth || 0;
-    if (depth > 15) return { __limit__: true };
-    if (typeof x === 'number' && x >= 0 && x < raw.length) {
-      var t = raw[x];
-      if (typeof t === 'number' || typeof t === 'boolean' || t === null) return t;
-      if (inProg[x]) return { __circular__: x };
-      if (cache[x] !== undefined) return cache[x];
-      inProg[x] = true;
-      cache[x] = resolve(t, depth + 1);
-      delete inProg[x];
-      return cache[x];
-    }
-    if (Array.isArray(x)) {
-      var arr = [];
-      for (var i = 0; i < x.length; i++) arr.push(resolve(x[i], depth + 1));
-      return arr;
-    }
-    if (typeof x === 'object' && x !== null) {
-      var obj = {};
-      for (var k in x) obj[k] = resolve(x[k], depth + 1);
-      return obj;
-    }
-    return x;
-  }
-  return resolve;
-}
-
-function parseReport(html) {
-  var jsonStr = extractNuxtJson(html);
-  if (!jsonStr) throw new Error('no nuxt data');
-  var raw = JSON.parse(jsonStr);
-  if (!raw || !Array.isArray(raw) || raw.length < 4) throw new Error('bad payload');
-
-  var resolve = makeResolver(raw);
-  var dataObj = raw[3];
-
-  var qIdx = null;
-  for (var k in dataObj) {
-    if (k.indexOf('q:') === 0) { qIdx = dataObj[k]; break; }
-  }
-  if (qIdx === null) throw new Error('no q block');
-  var qBlock = raw[qIdx];
-  var ipObj = raw[qBlock.ip];
-  if (!ipObj || typeof ipObj !== 'object') throw new Error('bad ip block');
-
-  return {
-    ip: resolve(ipObj.ip),
-    geo: resolve(ipObj.geo) || {},
-    network: resolve(ipObj.network) || {},
-    risk: resolve(ipObj.risk) || {},
-    purity: resolve(ipObj.purity) || {},
-    env: resolve(ipObj.ip_environment) || {},
-    checks: resolve(ipObj.checks) || [],
-    ranks: resolve(qBlock.ranks) || {},
-  };
-}
-
-/* 报告页失败时的降级数据（来自 CLI） */
-function fallbackData(cli) {
-  return {
-    ip: cli.ip,
-    geo: { country: '', region: '', city: '', district: '' },
-    network: { asn: '', asn_name: '', network_type: '', native_or_broadcast: '' },
-    risk: { risk_level: cli.riskFlag || '' },
-    purity: { score: cli.purityScore, grade: cli.purityGrade, native_label: cli.native, ip_type: cli.ipType },
-    env: null,
-    checks: [],
-    ranks: null,
-    degraded: true,
-  };
-}
-
-/* ==================== 渲染 ==================== */
-
-function renderWidget(data, cli, family, group, latencyInfo) {
-  if (family === 'systemSmall') return renderSmall(data, cli, group, latencyInfo);
-  if (family === 'systemMedium') return renderMedium(data, cli, group, latencyInfo);
-  return renderLarge(data, cli, group, latencyInfo);
-}
-
-function networkLabel(t) {
-  if (!t) return '—';
-  var v = String(t).toLowerCase();
-  if (v === 'residential') return '家宽';
-  if (v === 'datacenter' || v === 'hosting') return '机房';
-  if (v === 'mobile') return '移动';
-  return t;
-}
-
-function verdictCN(v) {
-  if (v === 'safe') return '适合';
-  if (v === 'caution') return '可试';
-  if (v === 'unsafe') return '不宜';
-  return '未知';
-}
-
-function verdictColor(v) {
-  if (v === 'safe') return '#35705A';
-  if (v === 'caution') return '#9A6A2F';
-  if (v === 'unsafe') return '#A14E50';
-  return '#5F6670';
-}
-
-function checkShort(verdict) {
-  if (!verdict) return '—';
-  if (verdict.indexOf('未检测到') === 0 || verdict.indexOf('非 ') === 0 || verdict.indexOf('无') === 0 || verdict.indexOf('未识别') === 0) return '未检出';
-  return verdict;
-}
-
-function badge(text, color) {
-  return {
-    type: 'stack', direction: 'row', alignItems: 'center',
-    padding: [1, 5], borderRadius: 4, borderWidth: 1, borderColor: color + '59',
-    children: [{ type: 'text', text: text, font: { size: 9, weight: 'medium' }, textColor: color, maxLines: 1 }],
-  };
-}
-
-function cell(label, value, sub, valueColor) {
-  var children = [
-    { type: 'text', text: label, font: { size: 9 }, textColor: '#8A9199', maxLines: 1, minScale: 0.7 },
-    { type: 'text', text: value, font: { size: 13, weight: 'bold' }, textColor: valueColor || '#1A1B1C', maxLines: 1, minScale: 0.7 },
-  ];
-  if (sub) children.push({ type: 'text', text: sub, font: { size: 8 }, textColor: '#A3A9B0', maxLines: 1, minScale: 0.6 });
-  return {
-    type: 'stack', direction: 'column', alignItems: 'start', gap: 0, flex: 1,
-    padding: [3, 5], backgroundColor: '#F5F6F3', borderRadius: 5,
-    children: children,
-  };
-}
-
-function sectionTitle(t) {
-  return { type: 'text', text: t, font: { size: 11, weight: 'bold' }, textColor: '#2C3E50' };
-}
-
-/* ---------- 大组件: 完整复刻「综合报告」卡片 ---------- */
-function renderLarge(data, cli, group, latencyInfo) {
-  var ip = data.ip || (cli && cli.ip) || '—';
-  var ipVer = (cli && cli.ipVersion) || 'IPv4';
-  var location = '';
-  if (data.geo && (data.geo.country || data.geo.region)) {
-    var parts = [];
-    if (data.geo.country) parts.push(data.geo.country);
-    if (data.geo.region) parts.push(data.geo.region);
-    if (data.geo.city) parts.push(data.geo.city);
-    if (data.geo.district) parts.push(data.geo.district);
-    location = parts.join('·');
-  }
-  if (!location && cli) location = cli.location || '—';
-  if (!location) location = '—';
-
-  var asnLine = '';
-  if (data.network && data.network.asn) {
-    asnLine = 'AS' + data.network.asn + (data.network.asn_name ? ' - ' + data.network.asn_name : '');
-  }
-  if (!asnLine && cli) asnLine = cli.asnLine || '—';
-  if (!asnLine) asnLine = '—';
-
-  var score = data.env && data.env.score != null ? data.env.score : ((cli && cli.purityScore) || '—');
-  var grade = data.env && data.env.grade ? data.env.grade : ((cli && cli.purityGrade) || '');
-  var purityScore = data.purity && data.purity.score != null ? data.purity.score : ((cli && cli.purityScore) || '—');
-  var purityGrade = data.purity && data.purity.grade ? data.purity.grade : ((cli && cli.purityGrade) || '');
-  var netLabel = networkLabel((data.network && data.network.network_type) || (cli && cli.networkType));
-  var nativeLabel = (data.purity && data.purity.native_label) || (cli && cli.native) || '原生IP';
-  var ipTypeLabel = (data.purity && data.purity.ip_type) || (cli && cli.ipType) || '住宅IP';
-  var ipTypeShort = ipTypeLabel.indexOf('Residential') === 0 ? '住宅IP' : (ipTypeLabel.indexOf('Datacenter') === 0 ? '机房IP' : ipTypeLabel);
-
-  var netType = (data.network && data.network.network_type) || (cli && cli.networkType);
-  var netLabel = networkLabel(netType);
-  // 降级数据只有 ISP/住宅 时，识别为家宽
-  if ((String(netType).toLowerCase() === 'isp') && (String(ipTypeLabel).indexOf('Residential') === 0 || String(ipTypeLabel).indexOf('住宅') === 0)) netLabel = '家宽';
-
-  var repScore = '—', neiVal = '未测', provScore = '—', asnScore = '—';
-  var repSub = '', asnSub = '';
-  if (data.env && data.env.parts) {
-    var parts = data.env.parts;
-    for (var i = 0; i < parts.length; i++) {
-      var p = parts[i];
-      if (p.key === 'reputation') { repScore = p.score != null ? String(p.score) : '—'; repSub = p.reason || ''; }
-      if (p.key === 'neighborhood') neiVal = p.score != null ? String(p.score) : '未测';
-      if (p.key === 'provenance') provScore = p.score != null ? String(p.score) : '—';
-      if (p.key === 'asn_profile') { asnScore = p.score != null ? String(p.score) : '—'; asnSub = p.reason || ''; }
-    }
-  } else if (cli) {
-    repScore = cli.purityScore || '—';
-    asnScore = cli.homeProb ? cli.homeProb + '%' : '—';
-    provScore = cli.riskScore ? '风险 ' + cli.riskScore : '—';
+    var r = await ctx.http.get('https://cleanip.io/c/RHEK.svg', { policy: group, timeout: 8000 });
+    var t = await r.text();
+    if (t && t.indexOf('<svg') > -1) svg = t;
+  } catch (e) {
+    svg = null;
   }
 
-  var checksMap = {};
-  for (var j = 0; j < (data.checks || []).length; j++) {
-    var c = data.checks[j];
-    if (c && typeof c === 'object' && c.key) checksMap[c.key] = c;
+  if (svg) {
+    try { ctx.storage.setJSON(cacheKey, { svg: svg, ts: Date.now() }); } catch (e) {}
+    return cardWidget(svg, (Date.now() - t0) + 'ms');
   }
-  function riskCell(name, c) {
-    if (c && c.verdict && String(c.verdict).indexOf('未') === 0) {
-      return cell(name, checkShort(c.verdict), '', '#35705A');
-    }
-    if (c) {
-      return cell(name, checkShort(c.verdict), (c.status === 'warn') ? '命中' : '', '#A14E50');
-    }
-    return cell(name, '未检出', '', '#35705A');
-  }
-  var riskFactors = (data.purity && data.purity.risk_factors) ? data.purity.risk_factors.length : 0;
-  var dnsblCount = (data.risk && data.risk.dnsbl_listed) ? data.risk.dnsbl_listed.length : 0;
-  var factorVal = (riskFactors > 0 || dnsblCount > 0) ? ('命中 ' + Math.max(riskFactors, dnsblCount)) : '未命中';
-  var factorSub = '';
-  if (dnsblCount > 0 && data.risk && data.risk.dnsbl_listed) factorSub = data.risk.dnsbl_listed.join(', ');
-  else if (data.purity && data.purity.risk_factors && data.purity.risk_factors.length) factorSub = data.purity.risk_factors[0];
-  var r1 = riskCell('VPN', checksMap.vpn);
-  var r2 = riskCell('代理', checksMap.proxy);
-  var r3 = riskCell('Tor', checksMap.tor);
-  var r4 = riskCell('滥用', checksMap.abuse_history);
-  var r5 = cell('风险因素', factorVal, factorSub, (factorVal.indexOf('命中') === 0) ? '#A14E50' : '#35705A');
 
-  var ps = (data.purity && data.purity.platform_safety) || {};
-  function scene(name, v) {
-    return {
-      type: 'stack', direction: 'column', alignItems: 'start', gap: 0, flex: 1,
-      padding: [2, 4], backgroundColor: '#F5F6F3', borderRadius: 5,
-      children: [
-        { type: 'text', text: name, font: { size: 8 }, textColor: '#8A9199', maxLines: 1, minScale: 0.7 },
-        { type: 'text', text: verdictCN(v), font: { size: 10, weight: 'semibold' }, textColor: verdictColor(v), maxLines: 1 },
-      ],
-    };
-  }
-  var streamV = 'safe';
-  if (ps.netflix === 'unsafe' || ps.disney_plus === 'unsafe' || ps.youtube === 'unsafe') streamV = 'unsafe';
-  else if (ps.netflix === 'caution' || ps.disney_plus === 'caution' || ps.youtube === 'caution') streamV = 'caution';
-  else if (!ps.netflix && !ps.disney_plus && !ps.youtube) streamV = '';
-  var s1 = scene('AI应用', ps.ai_subscription || '');
-  var s2 = scene('流媒体', streamV);
-  var s3 = scene('TikTok', ps.tiktok || '');
-  var s4 = scene('X', ps.twitter || '');
-  var s5 = scene('Facebook', ps.facebook || '');
-  var s6 = scene('跨境电商', ps.ecommerce || '');
-  var s7 = scene('支付', ps.payment || '');
-  var s8 = scene('游戏', ps.gaming || '');
+  // 失败: 优先用缓存
+  if (cached) return cardWidget(cached.svg, '缓存 ' + cached.ageMin + 'min');
 
-  var children = [];
-  // 1. 顶部标题栏
-  children.push({
-    type: 'stack', direction: 'row', alignItems: 'center',
-    children: [
-      { type: 'text', text: 'IP综合报告', font: { size: 14, weight: 'bold' }, textColor: '#1A1B1C' },
-      { type: 'spacer' },
-      { type: 'text', text: 'cleanip.io · ' + (group === 'DIRECT' ? '直连' : group), font: { size: 9 }, textColor: '#8A9199', maxLines: 1 },
-    ],
-  });
-  // 2. 主信息区：全部居中，不再左右分栏
-  children.push({
-    type: 'stack', direction: 'column', alignItems: 'center', gap: 2,
-    children: [
-      { type: 'text', text: '你的IP - ' + ipVer, font: { size: 9 }, textColor: '#8A9199' },
-      { type: 'text', text: ip, font: { size: 20, weight: 'bold' }, textColor: '#1A1B1C', maxLines: 1, minScale: 0.5, textAlign: 'center' },
-      {
-        type: 'stack', direction: 'row', alignItems: 'end', gap: 3,
-        children: [
-          { type: 'text', text: String(score), font: { size: 22, weight: 'bold' }, textColor: '#2C5FA6' },
-          { type: 'text', text: grade, font: { size: 11, weight: 'semibold' }, textColor: '#2C5FA6' },
-        ],
-      },
-      { type: 'text', text: '综合评分', font: { size: 9 }, textColor: '#8A9199', textAlign: 'center' },
-      {
-        type: 'stack', direction: 'row', alignItems: 'center', gap: 3,
-        children: [
-          badge(netLabel, '#35705A'),
-          { type: 'text', text: '纯净度 ' + String(purityScore) + (purityGrade ? ' ' + purityGrade : ''), font: { size: 9, weight: 'medium' }, textColor: '#5F6670', maxLines: 1 },
-        ],
-      },
-      { type: 'text', text: location, font: { size: 12, weight: 'semibold' }, textColor: '#1A1B1C', maxLines: 1, minScale: 0.6, textAlign: 'center' },
-      { type: 'text', text: asnLine, font: { size: 9 }, textColor: '#5F6670', maxLines: 1, minScale: 0.6, textAlign: 'center' },
-      {
-        type: 'stack', direction: 'row', gap: 3, alignItems: 'center',
-        children: [badge(ipVer, '#4F6B9A'), badge(nativeLabel.indexOf('Native') === 0 ? '原生IP' : nativeLabel, '#4F6B9A'), badge(ipTypeShort, '#4F6B9A')],
-      },
-    ],
-  });
-
-  // 5. 评分构成
-  children.push({ type: 'spacer', length: 2 });
-  children.push(sectionTitle('评分构成'));
-  children.push({
-    type: 'stack', direction: 'row', gap: 4, alignItems: 'start',
-    children: [cell('信誉记录', repScore, repSub), cell('邻居网段', neiVal, '', (neiVal === '未测' ? '#8A9199' : '#1A1B1C')),
-      cell('归属来源', provScore, ''), cell('网络画像', asnScore, asnSub)],
-  });
-
-  // 6. 风险检测
-  children.push({ type: 'spacer', length: 2 });
-  children.push(sectionTitle('风险检测'));
-  children.push({
-    type: 'stack', direction: 'row', gap: 4, alignItems: 'start',
-    children: [r1, r2, r3, r4, r5],
-  });
-
-  // 7. 场景适配
-  children.push({ type: 'spacer', length: 2 });
-  children.push(sectionTitle('场景适配'));
-  children.push({
-    type: 'stack', direction: 'row', gap: 4, alignItems: 'start',
-    children: [s1, s2, s3, s4],
-  });
-  children.push({
-    type: 'stack', direction: 'row', gap: 4, alignItems: 'start',
-    children: [s5, s6, s7, s8],
-  });
-
-  // 8. 底部
-  children.push({ type: 'spacer', length: 2 });
-  children.push({ type: 'text', text: '完整报告 cleanip.io/ip/' + ip, font: { size: 9 }, textColor: '#8A9199', maxLines: 1, minScale: 0.6, textAlign: 'center' });
-  if (data.degraded) children.push({ type: 'text', text: '报告页超时，展示 CLI 精简数据', font: { size: 8 }, textColor: '#9A6A2F', textAlign: 'center' });
-
+  // 全失败: 错误提示
   return {
     type: 'widget',
-    gap: 3,
-    padding: 12,
-    backgroundColor: '#FFFFFF',
-    children: children,
-  };
-}
-
-/* ---------- 中组件 ---------- */
-function renderMedium(data, cli, group, latencyInfo) {
-  var ip = data.ip || (cli && cli.ip) || '—';
-  var score = data.env && data.env.score != null ? data.env.score : ((cli && cli.purityScore) || '—');
-  var grade = data.env && data.env.grade ? data.env.grade : '';
-  var purityScore = data.purity && data.purity.score != null ? data.purity.score : ((cli && cli.purityScore) || '—');
-  var purityGrade = data.purity && data.purity.grade ? data.purity.grade : '';
-  var netLabel = networkLabel((data.network && data.network.network_type) || (cli && cli.networkType));
-  var location = (data.geo && (data.geo.country || data.geo.city)) ? ((data.geo.country || '') + (data.geo.region ? '·' + data.geo.region : '') + (data.geo.city ? '·' + data.geo.city : '')) : ((cli && cli.location) || '');
-  return {
-    type: 'widget',
+    padding: 14,
     gap: 4,
-    padding: 12,
-    backgroundColor: '#FFFFFF',
+    children: [
+      { type: 'text', text: '卡片加载失败', font: { size: 'footnote', weight: 'semibold' }, textColor: '#A14E50', textAlign: 'center' },
+      { type: 'text', text: 'cleanip.io 超时或被限流', font: { size: 'caption2' }, textColor: '#8A9199', textAlign: 'center' },
+      { type: 'text', text: '可在脚本 env 填 GROUP=代理组名重试', font: { size: 'caption2' }, textColor: '#8A9199', textAlign: 'center' },
+    ],
+  };
+}
+
+/* 渲染卡片: 一张官方 SVG 图片占满组件 */
+function cardWidget(svg, latency) {
+  return {
+    type: 'widget',
+    padding: 6,
     children: [
       {
-        type: 'stack', direction: 'row', alignItems: 'center',
-        children: [
-          { type: 'text', text: 'IP综合报告', font: { size: 13, weight: 'bold' }, textColor: '#1A1B1C' },
-          { type: 'spacer' },
-          { type: 'text', text: latencyInfo || 'cleanip.io', font: { size: 9 }, textColor: '#8A9199' },
-        ],
-      },
-      {
-        type: 'stack', direction: 'column', alignItems: 'center', gap: 1,
-        children: [
-          { type: 'text', text: ip, font: { size: 17, weight: 'bold' }, textColor: '#1A1B1C', maxLines: 1, minScale: 0.5, textAlign: 'center' },
-          { type: 'text', text: location, font: { size: 10 }, textColor: '#5F6670', maxLines: 1, textAlign: 'center' },
-          {
-            type: 'stack', direction: 'row', alignItems: 'end', gap: 2,
-            children: [
-              { type: 'text', text: String(score), font: { size: 18, weight: 'bold' }, textColor: '#2C5FA6' },
-              { type: 'text', text: grade, font: { size: 10, weight: 'semibold' }, textColor: '#2C5FA6' },
-            ],
-          },
-          { type: 'text', text: '纯净度 ' + String(purityScore) + (purityGrade ? ' ' + purityGrade : '') + ' · ' + netLabel, font: { size: 9 }, textColor: '#5F6670', textAlign: 'center', maxLines: 1, minScale: 0.6 },
-        ],
-      },
-      {
-        type: 'stack', direction: 'row', gap: 4,
-        children: [
-          cell('综合评分', String(score) + (grade ? ' ' + grade : ''), ''),
-          cell('纯净度', String(purityScore) + (purityGrade ? ' ' + purityGrade : ''), ''),
-          cell('网络类型', netLabel, ''),
-        ],
+        type: 'image',
+        src: 'data:image/svg+xml;base64,' + utf8ToBase64(svg),
+        flex: 1,
+        resizeMode: 'contain',
       },
     ],
   };
 }
 
-/* ---------- 小组件 ---------- */
-function renderSmall(data, cli, group, latencyInfo) {
-  var ip = data.ip || (cli && cli.ip) || '—';
-  var score = data.env && data.env.score != null ? data.env.score : ((cli && cli.purityScore) || '—');
-  var purityScore = data.purity && data.purity.score != null ? data.purity.score : ((cli && cli.purityScore) || '—');
-  return {
-    type: 'widget',
-    gap: 4,
-    padding: 12,
-    backgroundColor: '#FFFFFF',
-    children: [
-      { type: 'text', text: 'IP综合报告', font: { size: 12, weight: 'bold' }, textColor: '#1A1B1C', textAlign: 'center' },
-      { type: 'text', text: ip, font: { size: 14, weight: 'bold' }, textColor: '#2C5FA6', maxLines: 1, minScale: 0.5, textAlign: 'center' },
-      { type: 'text', text: '综合 ' + String(score) + ' · 纯净度 ' + String(purityScore), font: { size: 10 }, textColor: '#5F6670', textAlign: 'center' },
-      { type: 'text', text: 'cleanip.io', font: { size: 9 }, textColor: '#8A9199', textAlign: 'center' },
-    ],
-  };
+/* UTF-8 字符串 → Base64（兼容无 btoa 的 JS 环境） */
+function utf8ToBase64(str) {
+  var bytes = [];
+  for (var i = 0; i < str.length; i++) {
+    var c = str.charCodeAt(i);
+    if (c < 0x80) {
+      bytes.push(c);
+    } else if (c < 0x800) {
+      bytes.push(0xC0 | (c >> 6), 0x80 | (c & 0x3F));
+    } else if (c < 0xD800 || c >= 0xE000) {
+      bytes.push(0xE0 | (c >> 12), 0x80 | ((c >> 6) & 0x3F), 0x80 | (c & 0x3F));
+    } else {
+      i++;
+      c = 0x10000 + (((c & 0x3FF) << 10) | (str.charCodeAt(i) & 0x3FF));
+      bytes.push(0xF0 | (c >> 18), 0x80 | ((c >> 12) & 0x3F), 0x80 | ((c >> 6) & 0x3F), 0x80 | (c & 0x3F));
+    }
+  }
+  var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  var out = '', b = 0, n = 0;
+  for (var j = 0; j < bytes.length; j++) {
+    b = (b << 8) | bytes[j];
+    n += 8;
+    while (n >= 6) {
+      n -= 6;
+      out += chars[(b >> n) & 0x3F];
+    }
+  }
+  if (n > 0) out += chars[(b << (6 - n)) & 0x3F];
+  while (out.length % 4) out += '=';
+  return out;
 }
