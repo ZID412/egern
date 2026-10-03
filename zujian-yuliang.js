@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 订阅余量
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等。
 
 // 环境变量:
 // url1/name1/protocol1/reset1
@@ -633,7 +633,7 @@ function renderAccessoryRectangular(results) {
           { type: "text", text: item.name || "Traffic", font: { size: "headline", weight: "bold" }, maxLines: 1 },
         ],
       },
-      { type: "text", text: `${percent(item.remain, item.total)}  ⬆️️${formatBytes(item.upload)} ⬇️${formatBytes(item.download)}丨${formatBytes(item.total)}`, font: { size: 11, family: "Menlo" } },
+      { type: "text", text: `${percent(item.remain, item.total)}  ⬆️${formatBytes(item.upload)} ⬇️${formatBytes(item.download)}丨${formatBytes(item.total)}`, font: { size: 11, family: "Menlo" } },
       { type: "text", text: `今日 ${formatBytes(item.todayUsed)} 剩余 ${formatBytes(item.remain)}  ${expireText}`, font: { size: 11, family: "Menlo" }, opacity: 0.7 },
     ],
   };
@@ -893,10 +893,10 @@ function expireDaysText(data) {
     const now = new Date();
     const today = now.getDate();
 
-    if (today === resetDay) return "今天重置";
-
     let daysLeft;
-    if (today < resetDay) {
+    if (today === resetDay) {
+      daysLeft = 0;
+    } else if (today < resetDay) {
       daysLeft = resetDay - today;
     } else {
       // 当前月总天数
