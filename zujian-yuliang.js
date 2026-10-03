@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 订阅余量
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等。
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 // 环境变量:
 // url1/name1/protocol1/reset1
@@ -418,10 +418,11 @@ function renderTrafficSection(data, palette, options = {}) {
     ? formatBytes(data.total)
     : `⬆️${formatBytes(data.upload)} ⬇️${formatBytes(data.download)}丨${formatBytes(data.total)}`;
   
+  const resetText = expireDaysText(data);
   const meta = data.expire
-    ? `到期${dateText(data.expire)} ${expireDaysText(data)}`
-    : data.resetDay
-      ? expireDaysText(data)
+    ? `到期${dateText(data.expire)}${resetText ? ' ' + resetText : ''}`
+    : resetText
+      ? resetText
       : data.cached
         ? "缓存"
         : statusText(data);
@@ -616,7 +617,8 @@ function renderFooter(results, palette) {
 
 function renderAccessoryRectangular(results) {
   const item = results[0];
-  const expireText = item.expire ? `到期 ${dateText(item.expire)} ${expireDaysText(item)}` : statusText(item);
+  const resetText = expireDaysText(item);
+  const expireText = item.expire ? `到期 ${dateText(item.expire)}${resetText ? ' ' + resetText : ''}` : statusText(item);
   return {
     type: "widget",
     gap: 2,
@@ -631,7 +633,7 @@ function renderAccessoryRectangular(results) {
           { type: "text", text: item.name || "Traffic", font: { size: "headline", weight: "bold" }, maxLines: 1 },
         ],
       },
-      { type: "text", text: `${percent(item.remain, item.total)}  ⬆️${formatBytes(item.upload)} ⬇️${formatBytes(item.download)}丨${formatBytes(item.total)}`, font: { size: 11, family: "Menlo" } },
+      { type: "text", text: `${percent(item.remain, item.total)}  ⬆️️${formatBytes(item.upload)} ⬇️${formatBytes(item.download)}丨${formatBytes(item.total)}`, font: { size: 11, family: "Menlo" } },
       { type: "text", text: `今日 ${formatBytes(item.todayUsed)} 剩余 ${formatBytes(item.remain)}  ${expireText}`, font: { size: 11, family: "Menlo" }, opacity: 0.7 },
     ],
   };
@@ -869,51 +871,39 @@ function dateText(expire) {
 function expireDaysText(data) {
   if (!data) return "";
 
-  // 如果单独传入了时间戳/数字
+  let resetDay = null;
+  let expire = null;
+
   if (typeof data === "number" || typeof data === "string") {
-    const expire = Number(data);
-    if (!expire) return "";
-    const expireMs = expire > 1e12 ? expire : expire * 1000;
-    const diffMs = expireMs - Date.now();
-    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-    if (diffDays < 0) return "已过期";
-    if (diffDays === 0) return "今天重置";
-    return `距离重置${diffDays}天`;
+    expire = Number(data);
+  } else if (typeof data === "object") {
+    resetDay = data.resetDay || null;
+    expire = data.expire || null;
   }
 
-  // 1. 如果环境变量配置了重置日 (resetDay: 1 ~ 31)
-  if (data.resetDay) {
+  // 若未手动在环境变量配置 resetDay，则自动从到期时间戳的“几号”提取为月重置日
+  if (!resetDay && expire) {
+    const d = new Date(expire > 1e12 ? expire : expire * 1000);
+    if (!isNaN(d.getTime())) {
+      resetDay = d.getDate();
+    }
+  }
+
+  if (resetDay && resetDay >= 1 && resetDay <= 31) {
     const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
     const today = now.getDate();
 
-    if (today === data.resetDay) return "今天重置";
+    if (today === resetDay) return "今天重置";
 
-    let targetDate;
-    if (today < data.resetDay) {
-      const daysInMonth = new Date(year, month + 1, 0).getDate();
-      const actualDay = Math.min(data.resetDay, daysInMonth);
-      targetDate = new Date(year, month, actualDay);
+    let daysLeft;
+    if (today < resetDay) {
+      daysLeft = resetDay - today;
     } else {
-      const daysInNextMonth = new Date(year, month + 2, 0).getDate();
-      const actualDay = Math.min(data.resetDay, daysInNextMonth);
-      targetDate = new Date(year, month + 1, actualDay);
+      // 当前月总天数
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      daysLeft = (daysInMonth - today) + resetDay;
     }
-
-    const diffMs = targetDate.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-    return `距离重置${diffDays}天`;
-  }
-
-  // 2. 若未单独配置 resetDay，则根据 expire 到期时间戳计算
-  if (data.expire) {
-    const expireMs = data.expire > 1e12 ? data.expire : data.expire * 1000;
-    const diffMs = expireMs - Date.now();
-    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-    if (diffDays < 0) return "已过期";
-    if (diffDays === 0) return "今天重置";
-    return `距离重置${diffDays}天`;
+    return `距离重置${daysLeft}天`;
   }
 
   return "";
