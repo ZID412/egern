@@ -881,7 +881,25 @@ function expireDaysText(data) {
     expire = data.expire || null;
   }
 
-  // 若未手动在环境变量配置 resetDay，则自动从到期时间戳的“几号”提取为月重置日
+  // 1. 如果有到期时间戳，优先判断距离最终到期的剩余天数
+  if (expire) {
+    const expireMs = expire > 1e12 ? expire : expire * 1000;
+    const now = Date.now();
+    const diffMs = expireMs - now;
+
+    if (diffMs <= 0) {
+      return "已到期";
+    }
+
+    const daysToExpire = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    // 当到期天数 <= 30 天时，优先显示“距离到期xx天”
+    if (daysToExpire <= 30) {
+      return `距离到期${daysToExpire}天`;
+    }
+  }
+
+  // 2. 若未手动在环境变量配置 resetDay，且到期时间大于 30 天，则提取该日期的“几号”作为每月重置日
   if (!resetDay && expire) {
     const d = new Date(expire > 1e12 ? expire : expire * 1000);
     if (!isNaN(d.getTime())) {
@@ -889,6 +907,7 @@ function expireDaysText(data) {
     }
   }
 
+  // 3. 计算每月重置天数
   if (resetDay && resetDay >= 1 && resetDay <= 31) {
     const now = new Date();
     const today = now.getDate();
@@ -899,7 +918,6 @@ function expireDaysText(data) {
     } else if (today < resetDay) {
       daysLeft = resetDay - today;
     } else {
-      // 当前月总天数
       const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
       daysLeft = (daysInMonth - today) + resetDay;
     }
