@@ -6,10 +6,11 @@
 // url2/name2/protocol2/reset2
 // url3/name3/protocol3/reset3
 // url4/name4/protocol4/reset4
-// 最多支持显示4个订阅
+// url5/name5/protocol5/reset5
+// 最多支持显示5个订阅
 
 const DEFAULT_REFRESH_MINUTES = 60;
-const MAX_ACCOUNTS = 4;
+const MAX_ACCOUNTS = 5;
 
 // 1. 定义可供随机抽取的 SF Symbols 图标池（已移除 server.rack，避免与顶部重复）
 const RANDOM_SYMBOL_POOL = [
@@ -80,7 +81,7 @@ function normalizeFamily(value) {
 function limitForFamily(family) {
   if (family === "systemSmall" || family.startsWith("accessory")) return 1;
   if (family === "systemMedium") return 2;
-  return 4;
+  return 5;
 }
 
 function refreshMinutes(ctx) {
@@ -93,7 +94,7 @@ function refreshMinutes(ctx) {
 function collectAccounts(ctx, max) {
   const env = ctx.env || {};
   const accounts = [];
-  const accents = ["#46D66B", "#7A84E8", "#58A6FF", "#FFB800"];
+  const accents = ["#46D66B", "#7A84E8", "#58A6FF", "#FFB800", "#FF6B6B"];
   
   // 每次执行时，随机打乱图标池，确保拿到的图标互相不重复
   const shuffledSymbols = shuffleArray(RANDOM_SYMBOL_POOL);
@@ -117,6 +118,7 @@ function collectAccounts(ctx, max) {
     ["Sub 2", "SUB2_URL", "Mixed", accents[1]],
     ["Sub 3", "SUB3_URL", "Mixed", accents[2]],
     ["Sub 4", "SUB4_URL", "Mixed", accents[3]],
+    ["Sub 5", "SUB5_URL", "Mixed", accents[4]],
   ];
 
   for (let idx = 0; idx < aliases.length; idx++) {
@@ -313,6 +315,7 @@ function renderWidget(family, results, refreshAfter) {
   const compact = family === "systemMedium";
   const small = family === "systemSmall";
   const dense = !small && results.length >= 3;
+  const isFive = results.length >= 5;
   const palette = makePalette(results[0] && results[0].accent);
 
   if (small) {
@@ -335,20 +338,28 @@ function renderWidget(family, results, refreshAfter) {
     };
   }
 
+  const padding = compact
+    ? [12, 15, 11, 15]
+    : isFive
+      ? [12, 16, 10, 16]
+      : [16, 18, 14, 18];
+
+  const gap = compact ? 5 : isFive ? 4 : dense ? 6 : 8;
+
   return {
     type: "widget",
     backgroundGradient: palette.backgroundGradient,
-    padding: compact ? [12, 15, 11, 15] : [16, 18, 14, 18],
+    padding,
     gap: 0,
     refreshAfter,
     children: [
       renderHeader(results, palette, { compact, dense }),
-      spacer(compact ? 5 : dense ? 6 : 8),
+      spacer(gap),
       divider(palette),
-      spacer(compact ? 5 : dense ? 6 : 8),
-      ...interleaveSections(results, palette, { compact, dense }),
+      spacer(gap),
+      ...interleaveSections(results, palette, { compact, dense, count: results.length }),
       ...(family === "systemLarge" || family === "systemExtraLarge"
-        ? [spacer(dense ? 5 : 8), divider(palette), spacer(dense ? 5 : 8), renderFooter(results, palette)]
+        ? [spacer(gap), divider(palette), spacer(gap), renderFooter(results, palette)]
         : []),
     ],
   };
@@ -356,10 +367,11 @@ function renderWidget(family, results, refreshAfter) {
 
 function interleaveSections(results, palette, options) {
   const out = [];
+  const gap = options.compact ? 4 : options.count >= 5 ? 3 : options.dense ? 5 : 7;
   results.forEach((item, index) => {
     out.push(renderTrafficSection(item, palette, { ...options, index, count: results.length }));
     if (index < results.length - 1) {
-      out.push(spacer(options.compact ? 4 : options.dense ? 5 : 7), divider(palette), spacer(options.compact ? 4 : options.dense ? 5 : 7));
+      out.push(spacer(gap), divider(palette), spacer(gap));
     }
   });
   return out;
@@ -514,6 +526,18 @@ function sectionProfile(options) {
   }
 
   if (options.dense) {
+    if (options.count >= 5) {
+      return {
+        icon: 14,
+        nameSize: 14,
+        percentSize: 14,
+        valueSize: 10,
+        metaSize: 9,
+        progressHeight: 4,
+        gapAfterHead: 3,
+        gapAfterProgress: 3,
+      };
+    }
     return {
       icon: 16,
       nameSize: 16,
