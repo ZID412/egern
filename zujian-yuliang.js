@@ -832,7 +832,7 @@ function percent(a, b) {
 }
 
 function statusText(data) {
-  if (!data || !data.error) return "永久";
+  if (!data || !data.error) return "一次性流量 长期有效";
   return data.error.length > 18 ? `${data.error.slice(0, 18)}...` : data.error;
 }
 
