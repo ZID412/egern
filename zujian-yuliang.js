@@ -416,7 +416,7 @@ function renderTrafficSection(data, palette, options = {}) {
   const accent = data.ok ? data.accent || palette.accent : palette.warning;
   const rightValue = options.small
     ? formatBytes(data.total)
-    : `⬆️${formatBytes(data.upload)} ⬇️${formatBytes(data.download)}丨${formatBytes(data.total)}`;
+    : `↑${formatBytes(data.upload)} ↓${formatBytes(data.download)}丨${formatBytes(data.total)}`;
   
   const meta = data.expire
     ? `到期${dateText(data.expire)} ${expireDaysText(data.expire)}`
@@ -629,7 +629,7 @@ function renderAccessoryRectangular(results) {
           { type: "text", text: item.name || "Traffic", font: { size: "headline", weight: "bold" }, maxLines: 1 },
         ],
       },
-      { type: "text", text: `${percent(item.remain, item.total)}  ⬆️${formatBytes(item.upload)} ⬇️${formatBytes(item.download)}丨${formatBytes(item.total)}`, font: { size: 11, family: "Menlo" } },
+      { type: "text", text: `${percent(item.remain, item.total)}  ↑${formatBytes(item.upload)} ↓${formatBytes(item.download)}丨${formatBytes(item.total)}`, font: { size: 11, family: "Menlo" } },
       { type: "text", text: `今日 ${formatBytes(item.todayUsed)} 剩余 ${formatBytes(item.remain)}  ${expireText}`, font: { size: 11, family: "Menlo" }, opacity: 0.7 },
     ],
   };
@@ -839,7 +839,7 @@ function shortError(error) {
 function inlineText(results) {
   const item = results[0];
   if (!item) return "Traffic";
-  return `${item.name} ${percent(item.remain, item.total)} ⬆️${formatBytes(item.upload)} ⬇️${formatBytes(item.download)}丨${formatBytes(item.total)}`;
+  return `${item.name} ${percent(item.remain, item.total)} ↑${formatBytes(item.upload)} ↓${formatBytes(item.download)}丨${formatBytes(item.total)}`;
 }
 
 function formatBytes(bytes) {
