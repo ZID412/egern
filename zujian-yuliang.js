@@ -341,10 +341,10 @@ function renderWidget(family, results, refreshAfter) {
   const padding = compact
     ? [12, 15, 11, 15]
     : isFive
-      ? [10, 15, 8, 15]
+      ? [12, 16, 10, 16]
       : [16, 18, 14, 18];
 
-  const gap = compact ? 5 : isFive ? 3 : dense ? 6 : 8;
+  const gap = compact ? 5 : isFive ? 3.5 : dense ? 6 : 8;
 
   return {
     type: "widget",
@@ -367,7 +367,7 @@ function renderWidget(family, results, refreshAfter) {
 
 function interleaveSections(results, palette, options) {
   const out = [];
-  const gap = options.compact ? 4 : options.count >= 5 ? 2 : options.dense ? 5 : 7;
+  const gap = options.compact ? 4 : options.count >= 5 ? 2.5 : options.dense ? 5 : 7;
   results.forEach((item, index) => {
     out.push(renderTrafficSection(item, palette, { ...options, index, count: results.length }));
     if (index < results.length - 1) {
@@ -529,8 +529,8 @@ function sectionProfile(options) {
     if (options.count >= 5) {
       return {
         icon: 15,
-        nameSize: 15,
-        percentSize: 15,
+        nameSize: 15.5,
+        percentSize: 15.5,
         valueSize: 11,
         metaSize: 10,
         progressHeight: 4,
