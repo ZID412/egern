@@ -416,13 +416,15 @@ function renderTrafficSection(data, palette, options = {}) {
   const accent = data.ok ? data.accent || palette.accent : palette.warning;
   const rightValue = options.small
     ? formatBytes(data.total)
-    : `↑${formatBytes(data.upload)} ↓${formatBytes(data.download)}丨${formatBytes(data.total)}`;
+    : `⬆️${formatBytes(data.upload)} ⬇️${formatBytes(data.download)}丨${formatBytes(data.total)}`;
   
   const meta = data.expire
-    ? `到期${dateText(data.expire)} ${expireDaysText(data.expire)}`
-    : data.cached
-      ? "缓存"
-      : statusText(data);
+    ? `到期${dateText(data.expire)} ${expireDaysText(data)}`
+    : data.resetDay
+      ? expireDaysText(data)
+      : data.cached
+        ? "缓存"
+        : statusText(data);
 
   return {
     type: "stack",
@@ -614,7 +616,7 @@ function renderFooter(results, palette) {
 
 function renderAccessoryRectangular(results) {
   const item = results[0];
-  const expireText = item.expire ? `到期 ${dateText(item.expire)} ${expireDaysText(item.expire)}` : statusText(item);
+  const expireText = item.expire ? `到期 ${dateText(item.expire)} ${expireDaysText(item)}` : statusText(item);
   return {
     type: "widget",
     gap: 2,
@@ -629,7 +631,7 @@ function renderAccessoryRectangular(results) {
           { type: "text", text: item.name || "Traffic", font: { size: "headline", weight: "bold" }, maxLines: 1 },
         ],
       },
-      { type: "text", text: `${percent(item.remain, item.total)}  ↑${formatBytes(item.upload)} ↓${formatBytes(item.download)}丨${formatBytes(item.total)}`, font: { size: 11, family: "Menlo" } },
+      { type: "text", text: `${percent(item.remain, item.total)}  ⬆️${formatBytes(item.upload)} ⬇️${formatBytes(item.download)}丨${formatBytes(item.total)}`, font: { size: 11, family: "Menlo" } },
       { type: "text", text: `今日 ${formatBytes(item.todayUsed)} 剩余 ${formatBytes(item.remain)}  ${expireText}`, font: { size: 11, family: "Menlo" }, opacity: 0.7 },
     ],
   };
@@ -839,7 +841,7 @@ function shortError(error) {
 function inlineText(results) {
   const item = results[0];
   if (!item) return "Traffic";
-  return `${item.name} ${percent(item.remain, item.total)} ↑${formatBytes(item.upload)} ↓${formatBytes(item.download)}丨${formatBytes(item.total)}`;
+  return `${item.name} ${percent(item.remain, item.total)} ⬆️${formatBytes(item.upload)} ⬇️${formatBytes(item.download)}丨${formatBytes(item.total)}`;
 }
 
 function formatBytes(bytes) {
@@ -864,14 +866,57 @@ function dateText(expire) {
   return `${y}.${m}.${day}`;
 }
 
-function expireDaysText(expire) {
-  if (!expire) return "";
-  const expireMs = expire > 1e12 ? expire : expire * 1000;
-  const diffMs = expireMs - Date.now();
-  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-  if (diffDays < 0) return "已过期";
-  if (diffDays === 0) return "今天到期";
-  return `剩余${diffDays}天`;
+function expireDaysText(data) {
+  if (!data) return "";
+
+  // 如果单独传入了时间戳/数字
+  if (typeof data === "number" || typeof data === "string") {
+    const expire = Number(data);
+    if (!expire) return "";
+    const expireMs = expire > 1e12 ? expire : expire * 1000;
+    const diffMs = expireMs - Date.now();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) return "已过期";
+    if (diffDays === 0) return "今天重置";
+    return `距离重置${diffDays}天`;
+  }
+
+  // 1. 如果环境变量配置了重置日 (resetDay: 1 ~ 31)
+  if (data.resetDay) {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const today = now.getDate();
+
+    if (today === data.resetDay) return "今天重置";
+
+    let targetDate;
+    if (today < data.resetDay) {
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const actualDay = Math.min(data.resetDay, daysInMonth);
+      targetDate = new Date(year, month, actualDay);
+    } else {
+      const daysInNextMonth = new Date(year, month + 2, 0).getDate();
+      const actualDay = Math.min(data.resetDay, daysInNextMonth);
+      targetDate = new Date(year, month + 1, actualDay);
+    }
+
+    const diffMs = targetDate.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    return `距离重置${diffDays}天`;
+  }
+
+  // 2. 若未单独配置 resetDay，则根据 expire 到期时间戳计算
+  if (data.expire) {
+    const expireMs = data.expire > 1e12 ? data.expire : data.expire * 1000;
+    const diffMs = expireMs - Date.now();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) return "已过期";
+    if (diffDays === 0) return "今天重置";
+    return `距离重置${diffDays}天`;
+  }
+
+  return "";
 }
 
 function timeText(timestamp) {
