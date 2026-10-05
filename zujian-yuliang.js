@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 订阅余量
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
 
 // 环境变量:
 // url1/name1/protocol1/reset1
@@ -12,7 +12,7 @@
 const DEFAULT_REFRESH_MINUTES = 60;
 const MAX_ACCOUNTS = 5;
 
-// 1. 定义可供随机抽取的 SF Symbols 图标池（已移除 server.rack，避免与顶部重复）
+// 1. 定义可供随机抽取的 SF Symbols 图标池
 const RANDOM_SYMBOL_POOL = [
   "sf-symbol:point.3.connected.trianglepath.dotted",
   "sf-symbol:network",
@@ -96,7 +96,6 @@ function collectAccounts(ctx, max) {
   const accounts = [];
   const accents = ["#46D66B", "#7A84E8", "#58A6FF", "#FFB800", "#FF6B6B"];
   
-  // 每次执行时，随机打乱图标池，确保拿到的图标互相不重复
   const shuffledSymbols = shuffleArray(RANDOM_SYMBOL_POOL);
 
   for (let i = 1; i <= max; i++) {
@@ -377,7 +376,6 @@ function interleaveSections(results, palette, options) {
   return out;
 }
 
-// 顶部使用固定的服务器机架图标 (sf-symbol:server.rack)
 function renderHeader(results, palette, options = {}) {
   return {
     type: "stack",
@@ -891,7 +889,7 @@ function expireDaysText(data) {
       return "已到期";
     }
 
-    const daysToExpire = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const daysToExpire = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
     // 当到期天数 <= 30 天时，优先显示“距离到期xx天”
     if (daysToExpire <= 30) {
@@ -907,20 +905,28 @@ function expireDaysText(data) {
     }
   }
 
-  // 3. 计算每月重置天数
+  // 3. 计算每月重置天数（已重置/到达重置日时，自动切入下个月重置倒计时）
   if (resetDay && resetDay >= 1 && resetDay <= 31) {
     const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
     const today = now.getDate();
 
-    let daysLeft;
-    if (today === resetDay) {
-      daysLeft = 0;
-    } else if (today < resetDay) {
-      daysLeft = resetDay - today;
-    } else {
-      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-      daysLeft = (daysInMonth - today) + resetDay;
+    let targetYear = year;
+    let targetMonth = month;
+
+    // 当今天等于或超过重置日（表示当月已重置），目标计算推进至下个月
+    if (today >= resetDay) {
+      targetMonth += 1;
     }
+
+    const maxDays = new Date(targetYear, targetMonth + 1, 0).getDate();
+    const actualResetDay = Math.min(resetDay, maxDays);
+
+    const targetDate = new Date(targetYear, targetMonth, actualResetDay);
+    const todayZero = new Date(year, month, today);
+
+    const daysLeft = Math.round((targetDate.getTime() - todayZero.getTime()) / (1000 * 60 * 60 * 24));
     return `距离重置${daysLeft}天`;
   }
 
