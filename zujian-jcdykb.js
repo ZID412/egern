@@ -1,13 +1,16 @@
-// ZID412 - Egern通用脚本小组件 - 订阅余量
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
+// ZID412 - Egern通用脚本小组件 - 机场订阅看板
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 // 环境变量:
-// url1/name1/protocol1/reset1
-// url2/name2/protocol2/reset2
-// url3/name3/protocol3/reset3
-// url4/name4/protocol4/reset4
-// url5/name5/protocol5/reset5
-// 最多支持显示5个订阅
+// url1/name1/reset1
+// url2/name2/reset2
+// url3/name3/reset3
+// url4/name4/reset4
+// url5/name5/reset5
+// url=订阅链接，name=订阅名称，reset=每月重置日（可忽略，脚本自动计算）
+
+// 小尺寸展示1行订阅，中尺寸展示2行订阅，大尺寸最多展示5行订阅
+// 锁屏小组件（accessory 系列）：展示1个订阅
 
 const DEFAULT_REFRESH_MINUTES = 60;
 const MAX_ACCOUNTS = 5;
@@ -105,7 +108,6 @@ function collectAccounts(ctx, max) {
       slot: i,
       name: envText(env, [`name${i}`, `NAME${i}`]) || `Sub ${i}`,
       url,
-      protocol: envText(env, [`protocol${i}`, `PROTOCOL${i}`]) || "Mixed",
       resetDay: parseResetDay(envText(env, [`reset${i}`, `RESET${i}`])),
       accent: envText(env, [`accent${i}`, `ACCENT${i}`]) || accents[i - 1] || accents[0],
       symbol: shuffledSymbols[i - 1] || "sf-symbol:network",
@@ -113,15 +115,15 @@ function collectAccounts(ctx, max) {
   }
 
   const aliases = [
-    ["Sub 1", "SUB1_URL", "Mixed", accents[0]],
-    ["Sub 2", "SUB2_URL", "Mixed", accents[1]],
-    ["Sub 3", "SUB3_URL", "Mixed", accents[2]],
-    ["Sub 4", "SUB4_URL", "Mixed", accents[3]],
-    ["Sub 5", "SUB5_URL", "Mixed", accents[4]],
+    ["Sub 1", "SUB1_URL", accents[0]],
+    ["Sub 2", "SUB2_URL", accents[1]],
+    ["Sub 3", "SUB3_URL", accents[2]],
+    ["Sub 4", "SUB4_URL", accents[3]],
+    ["Sub 5", "SUB5_URL", accents[4]],
   ];
 
   for (let idx = 0; idx < aliases.length; idx++) {
-    const [name, key, protocol, accent] = aliases[idx];
+    const [name, key, accent] = aliases[idx];
     const url = envText(env, [key]);
     if (!url || accounts.some((item) => item.url === url)) continue;
     const currentSlot = accounts.length;
@@ -129,7 +131,6 @@ function collectAccounts(ctx, max) {
       slot: currentSlot + 1, 
       name, 
       url, 
-      protocol, 
       resetDay: null, 
       accent, 
       symbol: shuffledSymbols[currentSlot] || "sf-symbol:network" 
@@ -796,7 +797,6 @@ function storageKey(account, type) {
 function cacheShape(data) {
   return {
     name: data.name,
-    protocol: data.protocol,
     resetDay: data.resetDay,
     accent: data.accent,
     symbol: data.symbol,
