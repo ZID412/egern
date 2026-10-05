@@ -694,7 +694,6 @@ function makePalette(accent) {
     dim: "#8C95A8",
     divider: "#2C34438A",
     track: "#2B3440C2",
-    barIdle: "#3B445661",
     warning: "#FF6B6B",
     backgroundGradient: {
       type: "linear",
@@ -724,9 +723,7 @@ function spacer(length) {
 function updateUsageHistory(ctx, account, used) {
   const now = new Date();
   const dailyKey = storageKey(account, "daily");
-  const hourlyKey = storageKey(account, "hourly");
   const today = todayKey(now);
-  const hour = hourKey(now);
 
   const daily = readJSON(ctx, dailyKey, null);
   const nextDaily =
@@ -735,40 +732,9 @@ function updateUsageHistory(ctx, account, used) {
       : daily;
 
   const todayUsed = Math.max(used - Number(nextDaily.baselineUsed || 0), 0);
-  nextDaily.lastUsed = used;
-  nextDaily.updatedAt = Date.now();
   writeJSON(ctx, dailyKey, nextDaily);
 
-  let hourly = readJSON(ctx, hourlyKey, { hours: [] });
-  if (!hourly || !Array.isArray(hourly.hours)) hourly = { hours: [] };
-
-  const last = hourly.hours[hourly.hours.length - 1];
-  if (last && Number(last.lastUsed || 0) > used) hourly = { hours: [] };
-
-  let current = hourly.hours.find((item) => item.key === hour);
-  if (!current) {
-    const previous = hourly.hours[hourly.hours.length - 1];
-    const startUsed = previous ? Number(previous.lastUsed || used) : used;
-    current = { key: hour, startUsed, lastUsed: used, delta: Math.max(used - startUsed, 0) };
-    hourly.hours.push(current);
-  } else {
-    current.lastUsed = used;
-    current.delta = Math.max(used - Number(current.startUsed || used), 0);
-  }
-
-  hourly.hours = hourly.hours.filter((item) => item && item.key).slice(-48);
-  const byHour = {};
-  hourly.hours.forEach((item) => {
-    byHour[item.key] = Number(item.delta || 0);
-  });
-
-  hourly.updatedAt = Date.now();
-  writeJSON(ctx, hourlyKey, hourly);
-
-  return {
-    todayUsed,
-    hourlyUsage: lastHourKeys(24).map((key) => byHour[key] || 0),
-  };
+  return { todayUsed };
 }
 
 function readJSON(ctx, key, fallback) {
@@ -941,18 +907,4 @@ function todayKey(date) {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
-}
-
-function hourKey(date) {
-  return `${todayKey(date)}-${String(date.getHours()).padStart(2, "0")}`;
-}
-
-function lastHourKeys(count) {
-  const keys = [];
-  const now = new Date();
-  now.setMinutes(0, 0, 0);
-  for (let i = count - 1; i >= 0; i--) {
-    keys.push(hourKey(new Date(now.getTime() - i * 3600000)));
-  }
-  return keys;
 }
