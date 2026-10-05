@@ -222,6 +222,10 @@ async function loadTraffic(ctx, account) {
       return {
         ...empty,
         ...cached,
+        name: account.name || cached.name,
+        resetDay: account.resetDay !== null ? account.resetDay : cached.resetDay,
+        accent: account.accent || cached.accent,
+        symbol: account.symbol || cached.symbol,
         cached: true,
         fetchedAt: cached.fetchedAt || Date.now(),
         error: shortError(error),
@@ -617,7 +621,12 @@ function renderFooter(results, palette) {
 function renderAccessoryRectangular(results) {
   const item = results[0];
   const resetText = expireDaysText(item);
-  const expireText = item.expire ? `到期 ${dateText(item.expire)}${resetText ? ' ' + resetText : ''}` : statusText(item);
+  const expireText = item.expire
+    ? `到期 ${dateText(item.expire)}${resetText ? ' ' + resetText : ''}`
+    : resetText
+      ? resetText
+      : statusText(item);
+
   return {
     type: "widget",
     gap: 2,
