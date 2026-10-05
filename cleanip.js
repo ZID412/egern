@@ -1,119 +1,146 @@
-// Egern 小组件脚本（generic 类型）—— 显示 CleanIP.io 的 IP 综合报告卡片.
+// Egern 小组件脚本（generic 类型）—— IP 纯净度 / 风险 原生文本组件
+// 数据源：proxycheck.io（免费、无需 API Key，JSON，支持指定 IP）
+//   免费额度：每个来源 IP 每天 100 次；到 proxycheck.io 免费注册可提到 1000 次/天
 //
 // 用法：工具 → 脚本 → + → 类型 generic，粘入本文件内容；
-//       再到「分析 → 小组件画廊 → +」新建小组件并关联该脚本，尺寸选【大号】。
+//       再到「分析 → 小组件画廊 → +」新建小组件并关联该脚本（大号/中号都行）。
 //
-// 重要：image 元素必须显式给出 width / height，否则 Egern 会按图片原始尺寸(480×443pt)
-//       绘制，超出小组件容器直接被裁掉（就是只显示一部分的原因）。本脚本按组件尺寸自动算。
-//
-// 可配置的 env（全部可省略）：
-//   CARD_URL     cleanip.io「图片地址」标签页给出的 /c/xxxx.svg 链接
-//                默认 report + clean + auto + 480 + 中文，已验证可用
-//   FIT          手动指定图片容器尺寸，如 "320x336"（比例不对也没关系，会按 contain 缩放）
-//   FORMAT       'svg'（默认，矢量清晰、只用官方接口）或 'png'
-//   IP           固定显示某个 IP，例如 1.1.1.1；留空 = 显示当前出口 IP
+// env（都可省略）：
+//   IP           要查的 IP；留空 = 查询当前出口 IP（在 Egern 里即代理节点出口）
+//   POLICY       该请求使用的代理策略（策略组名 / 节点名 / DIRECT / REJECT）；不填按默认路由
 //   REFRESH_MIN  本地缓存分钟数，默认 15
-//   POLICY       该请求使用的代理策略；可填策略组名、单个代理节点名，或内置的 DIRECT / REJECT
-//                （填 DIRECT 才会让卡片显示本机真实 IP；不填则按 Egern 默认路由）
-
-// 各尺寸系列的内容区大小（pt），按 iOS 标准值；比例不对也没关系
-const FAMILY = {
-  systemSmall: [158, 158],
-  systemMedium: [338, 158],
-  systemLarge: [338, 354],
-  systemExtraLarge: [714, 354],
-  accessoryRectangular: [172, 76],
-  accessoryCircular: [76, 76],
-  accessoryInline: [160, 30],
-};
 
 export default async function (ctx) {
-  const CARD_URL = ctx.env.CARD_URL || 'https://cleanip.io/c/1jD7.svg';
-  const FORMAT = (ctx.env.FORMAT || 'svg').toLowerCase();
-  const FIXED_IP = (ctx.env.IP || '').trim();
+  const ip = (ctx.env.IP || '').trim();
   const TTL = Number(ctx.env.REFRESH_MIN || 15) * 60 * 1000;
-
   const now = Date.now();
-  const CACHE_KEY = ['cleanip', CARD_URL, FORMAT, FIXED_IP].join('|');
+  const CACHE_KEY = 'proxycheck|' + ip;
 
   const cached = ctx.storage.getJSON(CACHE_KEY);
-  let dataUri = cached && cached.at && now - cached.at < TTL ? cached.dataUri : null;
+  let info = cached && cached.at && now - cached.at < TTL ? cached.info : null;
 
-  if (!dataUri) {
-    const options = { timeout: 20000 };
+  if (!info) {
+    const options = { timeout: 15000 };
     if (ctx.env.POLICY) options.policy = ctx.env.POLICY;
 
-    if (FORMAT === 'png') {
-      // 备用方案：借第三方把 SVG 光栅化成 PNG 再内嵌（PNG 是 Egern 必然支持的位图格式）
-      let ip = FIXED_IP;
-      if (!ip) {
-        const probe = await ctx.http.get('https://api.ipify.org', options);
-        ip = (await probe.text()).trim();
-      }
-      const target = cardUrlFor(CARD_URL, ip, now);
-      const proxy = 'https://images.weserv.nl/?url=' + encodeURIComponent(target) + '&output=png&w=720';
-      const resp = await ctx.http.get(proxy, options);
-      dataUri = 'data:image/png;base64,' + toBase64(new Uint8Array(await resp.arrayBuffer()));
-    } else {
-      const resp = await ctx.http.get(cardUrlFor(CARD_URL, FIXED_IP, now), options);
-      dataUri = 'data:image/svg+xml;base64,' + toBase64(new Uint8Array(await resp.arrayBuffer()));
-    }
+    const url = 'https://proxycheck.io/v2/' + encodeURIComponent(ip) + '?vpn=1&asn=1&risk=1';
+    const resp = await ctx.http.get(url, options);
+    const json = await resp.json();
 
-    ctx.storage.setJSON(CACHE_KEY, { at: now, dataUri: dataUri });
+    const key = ip || Object.keys(json).find((k) => k !== 'status' && k !== 'node');
+    const d = json[key] || {};
+    info = {
+      ip: key,
+      status: json.status,
+      message: json.message || '',
+      risk: typeof d.risk === 'number' ? d.risk : null,
+      proxy: d.proxy || null,          // yes / no
+      type: d.type || null,            // VPN / Business / Hosting ...
+      asn: d.asn || null,
+      provider: d.provider || null,
+      country: d.country || null,
+      city: d.city || null,
+      vpn: d.operator && d.operator.name ? d.operator.name : null,
+    };
+    ctx.storage.setJSON(CACHE_KEY, { at: now, info: info });
   }
 
-  // 图片容器尺寸：优先用 env FIT，其次按当前组件尺寸系列
-  const custom = /^(\d+)\s*[x×]\s*(\d+)$/i.exec(ctx.env.FIT || '');
-  const box = custom
-    ? [Number(custom[1]), Number(custom[2])]
-    : FAMILY[ctx.widgetFamily] || FAMILY.systemLarge;
+  const risk = info.risk;
+  const riskColor = risk === null ? '#8A8F98' : risk >= 60 ? '#EF4444' : risk >= 25 ? '#F59E0B' : '#22C55E';
+
+  const accent = { light: '#111827', dark: '#F9FAFB' };
+  const subtle = { light: '#6B7280', dark: '#9CA3AF' };
+
+  const row = (label, value, color) => ({
+    type: 'stack',
+    direction: 'row',
+    alignItems: 'center',
+    gap: 8,
+    children: [
+      { type: 'text', text: label, font: { size: 'caption1' }, textColor: subtle },
+      { type: 'spacer' },
+      {
+        type: 'text',
+        text: value,
+        font: { size: 'caption1', weight: 'semibold' },
+        textColor: color || accent,
+        maxLines: 1,
+        minScale: 0.6,
+      },
+    ],
+  });
+
+  // 风险条：用一个横向 stack + flex 分配比例画出来（不需要额外资源）
+  const bar =
+    risk === null
+      ? null
+      : {
+          type: 'stack',
+          direction: 'row',
+          height: 6,
+          borderRadius: 3,
+          backgroundColor: { light: '#E5E7EB', dark: '#374151' },
+          children: [
+            { type: 'stack', height: 6, borderRadius: 3, flex: Math.max(risk, 2), backgroundColor: riskColor },
+            { type: 'stack', height: 6, flex: Math.max(100 - risk, 1), backgroundColor: { light: '#E5E7EB', dark: '#374151' } },
+          ],
+        };
+
+  const children = [
+    {
+      type: 'stack',
+      direction: 'row',
+      alignItems: 'center',
+      gap: 8,
+      children: [
+        { type: 'text', text: 'IP 纯净度', font: { size: 'footnote', weight: 'bold' }, textColor: accent },
+        { type: 'spacer' },
+        { type: 'text', text: 'proxycheck.io', font: { size: 'caption2' }, textColor: subtle },
+      ],
+    },
+    {
+      type: 'text',
+      text: info.ip || '—',
+      font: { size: 'title3', weight: 'bold' },
+      textColor: accent,
+      maxLines: 1,
+      minScale: 0.5,
+    },
+    {
+      type: 'text',
+      text:
+        [[info.country, info.city].filter(Boolean).join(' · '), info.asn].filter(Boolean).join(' · ') || '—',
+      font: { size: 'caption1' },
+      textColor: subtle,
+      maxLines: 1,
+      minScale: 0.6,
+    },
+    { type: 'spacer', length: 4 },
+    row('风险分', risk === null ? '—' : risk + ' / 100', riskColor),
+  ];
+  if (bar) children.push(bar);
+  children.push({ type: 'spacer' });
+  children.push(row('类型', info.type || '—'));
+  children.push(row('代理 / VPN', info.proxy === 'yes' ? '是' : info.proxy === 'no' ? '否' : '—', info.proxy === 'yes' ? '#EF4444' : undefined));
+  if (info.vpn) children.push(row('VPN 运营商', info.vpn));
+  children.push(row('运营商', info.provider || '—'));
+  if (info.status && info.status !== 'ok') {
+    children.push({
+      type: 'text',
+      text: '查询失败：' + (info.message || info.status),
+      font: { size: 'caption2' },
+      textColor: '#EF4444',
+      maxLines: 2,
+    });
+  }
 
   return {
     type: 'widget',
-    padding: 0,
-    backgroundColor: { light: '#FFFFFF', dark: '#111827' },
-    url: 'https://cleanip.io/',
+    padding: 16,
+    gap: 6,
+    backgroundColor: { light: '#FFFFFF', dark: '#1C1C1E' },
+    url: 'https://proxycheck.io/',
     refreshAfter: new Date(now + TTL).toISOString(),
-    children: [
-      {
-        type: 'image',
-        src: dataUri,
-        width: box[0],   // 必须显式给尺寸，否则按原始尺寸绘制会被裁切
-        height: box[1],
-        resizeMode: 'contain', // 完整显示整张卡片，不裁切
-        resizable: true,
-      },
-    ],
+    children: children,
   };
-}
-
-// ---- 工具函数 ----
-
-// 拼出 https://cleanip.io/c/<hash>[/<ip>].svg?fresh=1&v=<ts>
-function cardUrlFor(base, ip, ts) {
-  const [path, query] = base.split('?');
-  let url = ip ? path.replace(/\.svg$/, '/' + ip + '.svg') : path;
-  const parts = [];
-  if (query) parts.push(query);
-  parts.push('fresh=1', 'v=' + ts);
-  return url + '?' + parts.join('&');
-}
-
-// 纯 JS 的 base64 编码，不依赖 btoa
-function toBase64(bytes) {
-  const TABLE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  const parts = [];
-  let chunk = '';
-  for (let i = 0; i < bytes.length; i += 3) {
-    const b0 = bytes[i];
-    const b1 = i + 1 < bytes.length ? bytes[i + 1] : undefined;
-    const b2 = i + 2 < bytes.length ? bytes[i + 2] : undefined;
-    chunk += TABLE[b0 >> 2];
-    chunk += TABLE[((b0 & 3) << 4) | (b1 === undefined ? 0 : b1 >> 4)];
-    chunk += b1 === undefined ? '=' : TABLE[((b1 & 15) << 2) | (b2 === undefined ? 0 : b2 >> 6)];
-    chunk += b2 === undefined ? '=' : TABLE[b2 & 63];
-    if (chunk.length >= 8192) { parts.push(chunk); chunk = ''; }
-  }
-  parts.push(chunk);
-  return parts.join('');
 }
