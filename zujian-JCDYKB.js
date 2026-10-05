@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 // 环境变量:
 // url1/name1/reset1
@@ -244,17 +244,22 @@ async function loadTraffic(ctx, account) {
 
 async function fetchSubscriptionInfo(ctx, url) {
   const variants = buildUrlVariants(url);
-  // 无订阅头时按「先 HEAD 后 GET、先原始 URL 后 clash 变体」的顺序回退；
-  // 命中即返回，避免无谓的全量重试。
   const userAgents = [
     { "User-Agent": "Quantumult%20X/1.5.2" },
     { "User-Agent": "clash-verge-rev/2.3.1", Accept: "application/x-yaml,text/plain,*/*" },
     { "User-Agent": "mihomo/1.19.3", Accept: "application/x-yaml,text/plain,*/*" },
   ];
 
-  for (const method of ["head", "get"]) {
+  // 全局时限：小组件有执行时间上限，宁可早失败走缓存，也不要被系统掐掉
+  const deadline = Date.now() + 20000;
+
+  // UA 在最外层、方法在最内层：
+  //   同一个 UA + 同一个 URL 下，HEAD 不通就立刻用 GET 补，
+  //   不再拿另外两个 UA 对同一个 URL 重复发 HEAD。
+  for (const headers of userAgents) {
     for (const target of variants) {
-      for (const headers of userAgents) {
+      for (const method of ["head", "get"]) {
+        if (Date.now() > deadline) throw new Error("Subscription fetch timeout");
         try {
           const response = await httpRequest(ctx, method, target, headers);
           const raw = headerValue(response && response.headers, "subscription-userinfo");
