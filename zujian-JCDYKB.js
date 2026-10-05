@@ -122,18 +122,21 @@ function collectAccounts(ctx, max) {
     ["Sub 5", "SUB5_URL", accents[4]],
   ];
 
+  const usedSlots = new Set(accounts.map((item) => item.slot));
   for (let idx = 0; idx < aliases.length; idx++) {
     const [name, key, accent] = aliases[idx];
     const url = envText(env, [key]);
     if (!url || accounts.some((item) => item.url === url)) continue;
-    const currentSlot = accounts.length;
+    let nextSlot = 1;
+    while (usedSlots.has(nextSlot)) nextSlot++;
+    usedSlots.add(nextSlot);
     accounts.push({ 
-      slot: currentSlot + 1, 
+      slot: nextSlot, 
       name, 
       url, 
       resetDay: null, 
       accent, 
-      symbol: shuffledSymbols[currentSlot] || "sf-symbol:network" 
+      symbol: shuffledSymbols[nextSlot - 1] || "sf-symbol:network" 
     });
   }
 
@@ -170,7 +173,7 @@ function parseResetDay(value) {
 
 function findAccount(list, key) {
   const index = Number(key);
-  if (Number.isInteger(index) && list[index]) return list[index];
+  if (Number.isInteger(index) && index >= 1 && index <= list.length && list[index - 1]) return list[index - 1];
   return list.find((item) => item.name === key);
 }
 
