@@ -1,7 +1,5 @@
 # Egern DNS 泄露检测小组件
-# 📋 使用说明：将此文件配置到 Egern 中即可使用
-
-// 主组件代码 - 直接复制到 Egern 的 Script 配置中
+# 使用说明：将此文件内容配置到 Egern 中即可使用
 
 class DnsLeakDetector {
   constructor() {
@@ -23,22 +21,16 @@ class DnsLeakDetector {
     this.startDetecting();
   }
 
-  // 检测动画状态切换
   async startDetecting() {
     this.isDetecting = true;
-    this.startTime = Date.now;
-    await this.extendDetech(); // 延长检测，显示进度
+    this.startTime = Date.now();
   }
 
-  // 检测函数
   async detect() {
     this.isDetecting = true;
     this.startTime = Date.now();
-    
-    // 清空现有结果
     this.currentIps = {};
     
-    // 并发检测所有 DNS 服务器
     const detectionPromises = this.dnsServers.map(async (server) => {
       try {
         const ip = await this.resolveDns(server.ip);
@@ -65,13 +57,11 @@ class DnsLeakDetector {
 
     await Promise.all(detectionPromises);
     this.isDetecting = false;
-    this.render(); // 渲染结果界面
+    this.render();
   }
 
-  // 使用 Cloudflare DNS 解析域名
   async resolveDns(serverIp) {
     try {
-      // 使用实际的 DNS-over-HTTPS 接口
       const response = await fetch(`https://${serverIp}/resolve?name=google.com`, {
         headers: { 
           'Accept': 'application/dns-json',
@@ -88,7 +78,6 @@ class DnsLeakDetector {
     }
   }
 
-  // 渲染界面
   render() {
     let html = `
 <div class="dns-leak-detection">
@@ -129,7 +118,7 @@ class DnsLeakDetector {
   <div class="summary">
     <div class="summary-title">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M22.5 2.8l-9.8 16.7-6.7-7.6-6 7.6L2.8 6.6 22.5 2.8zM15 2.8a1 1 0 0 1 1.7 0l7 17a1 1 0 0 1-.5 1.3 1 1 0 0 1-1.4-.4l-6.1-12.2-3.2 6.4-3.2-6.4-6.2 12.3a1 1 0 0 1-1.6.4l-1.6-2.5a1 1 0 0 1-.2-1.3l8.2-17.7z"/>
+        <path d="M22.5 2.8l-9.8 16.7-6.7-7.6-6 7.6L2.8 6.6 22.5 2.8zM15 2.8a1 1 0 0 1 1.7 0l7 17a1 1 0 0 1-.5 1.3 1 1 0 0 1-1.4-.4l-6.1-12.2-3.2 6.4-3.2-6.4-6.2 12.3a1 0 1 1-1.6.4l-1.6-2.5a1 1 0 0 1-.2-1.3l8.2-17.7z"/>
       </svg>
       检测结论
     </div>
@@ -346,7 +335,6 @@ class DnsLeakDetector {
   }
 </style>`;
     
-    // 动态更新检测状态
     const elapsed = Date.now() - this.startTime;
     const progress = Math.min(elapsed / 800, 1) * 100;
     
@@ -358,7 +346,6 @@ class DnsLeakDetector {
     document.write(html);
     document.close();
     
-    // 更新进度
     if (this.isDetecting) {
       setTimeout(() => this.updateProgressBar(progress), 16);
     } else {
@@ -379,7 +366,6 @@ class DnsLeakDetector {
   }
 
   updateResults() {
-    // 更新 DNS 解析结果
     this.dnsServers.forEach(server => {
       const result = this.currentIps[server.name];
       const ipElement = document.querySelector(`#ip-${server.name.replace(/\s+/g, '-')}`);
@@ -389,16 +375,15 @@ class DnsLeakDetector {
         if (result && result.success) {
           ipElement.textContent = result.ip;
           ipElement.className = 'dns-ip safe';
-          statusElement.style.background = '#4ade80'; // green
+          statusElement.style.background = '#4ade80';
         } else {
           ipElement.textContent = 'failed';
           ipElement.className = 'dns-ip danger';
-          statusElement.style.background = '#f87171'; // red
+          statusElement.style.background = '#f87171';
         }
       }
     });
 
-    // 更新总结
     const uniqueIps = new Set(Object.values(this.currentIps).map(r => r.ip));
     const summaryElement = document.getElementById('summary-text');
     
@@ -408,13 +393,11 @@ class DnsLeakDetector {
       summaryElement.innerHTML = '<span class="warning">⚠️ 检测到 DNS 解析差异</span> 不同 DNS 服务器返回不同的 IP 地址';
     }
 
-    // 更新总时间
     const totalTime = Date.now() - this.startTime;
     document.getElementById('total-time').textContent = `耗时: ${Math.min(totalTime, 5000)}ms`;
   }
 }
 
-// 启动检测
 window.onload = () => {
   const detector = new DnsLeakDetector();
   detector.detect();
