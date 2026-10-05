@@ -424,7 +424,44 @@ function gaugeSvg(score, color, grade, gradeColor) {
 }
 
 // ============================== 主入口 ====================================
+// 整个流程用 try/catch 包住：任何异常都渲染成可见的错误卡片，绝不白屏。
 export default async function (ctx) {
+  try {
+    return await buildWidget(ctx);
+  } catch (fatal) {
+    const msg = String((fatal && fatal.stack) || (fatal && fatal.message) || fatal);
+    try {
+      return fatalView(msg, new Date(Date.now() + 10 * 60000).toISOString());
+    } catch (e2) {
+      // 连错误卡片都构造失败时的最后兜底：最小可渲染结构
+      return {
+        type: 'widget',
+        children: [{
+          type: 'text', text: 'CleanIP fatal: ' + msg.slice(0, 300),
+          font: { size: 7 }, textColor: '#dc2626',
+        }],
+      };
+    }
+  }
+}
+
+/** 致命错误卡片：把栈信息画出来，方便定位而不是白屏。 */
+function fatalView(message, refreshAfter) {
+  const lines = String(message).split('\n').slice(0, 11);
+  const children = [
+    { type: 'text', text: 'CleanIP 脚本异常', font: { size: 10, weight: 'bold' }, textColor: C.red },
+    { type: 'spacer', length: 4 },
+  ];
+  lines.forEach((ln) => {
+    children.push({
+      type: 'text', text: ln.slice(0, 92), font: { size: 6 },
+      textColor: C.muted, maxLines: 1, minScale: 0.3,
+    });
+  });
+  return { type: 'widget', refreshAfter, padding: 8, backgroundColor: '#ffffff', children };
+}
+
+async function buildWidget(ctx) {
   const env = ctx.env || {};
   const lang = String(env.LANGUAGE || 'zh').toLowerCase().startsWith('en') ? 'en' : 'zh';
   const policy = String(env.POLICY || '').trim();
