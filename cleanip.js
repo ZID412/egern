@@ -1,15 +1,31 @@
-// Egern 小组件脚本（generic 类型）—— 显示 CleanIP.io 的 IP 综合报告卡片
+// Egern 小组件脚本（generic 类型）—— 显示 CleanIP.io 的 IP 综合报告卡片.
 //
 // 用法：工具 → 脚本 → + → 类型 generic，粘入本文件内容；
 //       再到「分析 → 小组件画廊 → +」新建小组件并关联该脚本，尺寸选【大号】。
 //
+// 重要：image 元素必须显式给出 width / height，否则 Egern 会按图片原始尺寸(480×443pt)
+//       绘制，超出小组件容器直接被裁掉（就是只显示一部分的原因）。本脚本按组件尺寸自动算。
+//
 // 可配置的 env（全部可省略）：
 //   CARD_URL     cleanip.io「图片地址」标签页给出的 /c/xxxx.svg 链接
 //                默认 report + clean + auto + 480 + 中文，已验证可用
+//   FIT          手动指定图片容器尺寸，如 "320x336"（比例不对也没关系，会按 contain 缩放）
 //   FORMAT       'svg'（默认，矢量清晰、只用官方接口）或 'png'
 //   IP           固定显示某个 IP，例如 1.1.1.1；留空 = 显示当前出口 IP
 //   REFRESH_MIN  本地缓存分钟数，默认 15
-//   POLICY       该请求使用的代理策略；填 DIRECT 可强制直连（这样卡片显示的才是本机 IP）
+//   POLICY       该请求使用的代理策略；可填策略组名、单个代理节点名，或内置的 DIRECT / REJECT
+//                （填 DIRECT 才会让卡片显示本机真实 IP；不填则按 Egern 默认路由）
+
+// 各尺寸系列的内容区大小（pt），按 iOS 标准值；比例不对也没关系
+const FAMILY = {
+  systemSmall: [158, 158],
+  systemMedium: [338, 158],
+  systemLarge: [338, 354],
+  systemExtraLarge: [714, 354],
+  accessoryRectangular: [172, 76],
+  accessoryCircular: [76, 76],
+  accessoryInline: [160, 30],
+};
 
 export default async function (ctx) {
   const CARD_URL = ctx.env.CARD_URL || 'https://cleanip.io/c/1jD7.svg';
@@ -46,6 +62,12 @@ export default async function (ctx) {
     ctx.storage.setJSON(CACHE_KEY, { at: now, dataUri: dataUri });
   }
 
+  // 图片容器尺寸：优先用 env FIT，其次按当前组件尺寸系列
+  const custom = /^(\d+)\s*[x×]\s*(\d+)$/i.exec(ctx.env.FIT || '');
+  const box = custom
+    ? [Number(custom[1]), Number(custom[2])]
+    : FAMILY[ctx.widgetFamily] || FAMILY.systemLarge;
+
   return {
     type: 'widget',
     padding: 0,
@@ -56,8 +78,10 @@ export default async function (ctx) {
       {
         type: 'image',
         src: dataUri,
-        resizeMode: 'contain', // 完整显示整张卡片，不裁切（大号组件上下各留白约 21pt）
-        flex: 1,
+        width: box[0],   // 必须显式给尺寸，否则按原始尺寸绘制会被裁切
+        height: box[1],
+        resizeMode: 'contain', // 完整显示整张卡片，不裁切
+        resizable: true,
       },
     ],
   };
