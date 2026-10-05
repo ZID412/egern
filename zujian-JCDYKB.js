@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 // 环境变量:
 // url1/name1/reset1
@@ -52,6 +52,7 @@ export default async function (ctx = {}) {
   if (family === "accessoryInline") {
     return {
       type: "widget",
+      refreshAfter,
       children: [{ type: "text", text: inlineText(results) }],
     };
   }
@@ -60,18 +61,19 @@ export default async function (ctx = {}) {
     const item = results[0];
     return {
       type: "widget",
+      refreshAfter,
       padding: 4,
       children: [
         { type: "spacer" },
-        { type: "text", text: percent(item.remain, item.total), font: { size: "title2", weight: "bold" }, textAlign: "center" },
-        { type: "text", text: item.name || "Traffic", font: { size: "caption2", weight: "medium" }, textAlign: "center", opacity: 0.7, maxLines: 1 },
+        { type: "text", text: percent(item.remain, item.total), font: { size: 22, weight: "bold" }, textAlign: "center" },
+        { type: "text", text: item.name || "Traffic", font: { size: 11, weight: "medium" }, textAlign: "center", opacity: 0.7, maxLines: 1 },
         { type: "spacer" },
       ],
     };
   }
 
   if (family === "accessoryRectangular") {
-    return renderAccessoryRectangular(results);
+    return renderAccessoryRectangular(results, refreshAfter);
   }
 
   return renderWidget(family, results, refreshAfter);
@@ -98,7 +100,7 @@ function collectAccounts(ctx, max) {
   const env = ctx.env || {};
   const accounts = [];
   const accents = ["#46D66B", "#7A84E8", "#58A6FF", "#FFB800", "#FF6B6B"];
-  
+
   const shuffledSymbols = shuffleArray(RANDOM_SYMBOL_POOL);
 
   for (let i = 1; i <= max; i++) {
@@ -130,13 +132,13 @@ function collectAccounts(ctx, max) {
     let nextSlot = 1;
     while (usedSlots.has(nextSlot)) nextSlot++;
     usedSlots.add(nextSlot);
-    accounts.push({ 
-      slot: nextSlot, 
-      name, 
-      url, 
-      resetDay: null, 
-      accent, 
-      symbol: shuffledSymbols[nextSlot - 1] || "sf-symbol:network" 
+    accounts.push({
+      slot: nextSlot,
+      name,
+      url,
+      resetDay: null,
+      accent,
+      symbol: shuffledSymbols[nextSlot - 1] || "sf-symbol:network"
     });
   }
 
@@ -186,7 +188,6 @@ async function loadTraffic(ctx, account) {
     total: 0,
     remain: 0,
     todayUsed: 0,
-    hourlyUsage: [],
     expire: 0,
     ok: false,
     cached: false,
@@ -209,7 +210,6 @@ async function loadTraffic(ctx, account) {
       total,
       remain: Math.max(total - used, 0),
       todayUsed: history.todayUsed,
-      hourlyUsage: history.hourlyUsage,
       expire: Number(info.expire || 0),
       ok: total > 0,
       cached: false,
@@ -244,6 +244,8 @@ async function loadTraffic(ctx, account) {
 
 async function fetchSubscriptionInfo(ctx, url) {
   const variants = buildUrlVariants(url);
+  // 无订阅头时按「先 HEAD 后 GET、先原始 URL 后 clash 变体」的顺序回退；
+  // 命中即返回，避免无谓的全量重试。
   const userAgents = [
     { "User-Agent": "Quantumult%20X/1.5.2" },
     { "User-Agent": "clash-verge-rev/2.3.1", Accept: "application/x-yaml,text/plain,*/*" },
@@ -276,7 +278,7 @@ async function httpRequest(ctx, method, url, headers) {
 function headerValue(headers, name) {
   if (!headers) return "";
   if (typeof headers.get === "function") {
-    return headers.get(name) || headers.get(name.toLowerCase()) || headers.get(name.toUpperCase()) || "";
+    return headers.get(name) || "";
   }
   const target = name.toLowerCase();
   for (const key of Object.keys(headers)) {
@@ -331,7 +333,6 @@ function renderWidget(family, results, refreshAfter) {
       type: "widget",
       backgroundGradient: palette.backgroundGradient,
       padding: [15, 15, 14, 15],
-      gap: 0,
       refreshAfter,
       children: [
         renderHeader([item], palette, { small: true }),
@@ -351,13 +352,12 @@ function renderWidget(family, results, refreshAfter) {
       ? [12, 16, 10, 16]
       : [16, 18, 14, 18];
 
-  const gap = compact ? 5 : isFive ? 3.5 : dense ? 6 : 8;
+  const gap = compact ? 5 : isFive ? 4 : dense ? 6 : 8;
 
   return {
     type: "widget",
     backgroundGradient: palette.backgroundGradient,
     padding,
-    gap: 0,
     refreshAfter,
     children: [
       renderHeader(results, palette, { compact, dense }),
@@ -374,7 +374,7 @@ function renderWidget(family, results, refreshAfter) {
 
 function interleaveSections(results, palette, options) {
   const out = [];
-  const gap = options.compact ? 4 : options.count >= 5 ? 2.5 : options.dense ? 5 : 7;
+  const gap = options.compact ? 4 : options.count >= 5 ? 3 : options.dense ? 5 : 7;
   results.forEach((item, index) => {
     out.push(renderTrafficSection(item, palette, { ...options, index, count: results.length }));
     if (index < results.length - 1) {
@@ -423,7 +423,7 @@ function renderTrafficSection(data, palette, options = {}) {
   const rightValue = options.small
     ? formatBytes(data.total)
     : `⬆️${formatBytes(data.upload)} ⬇️${formatBytes(data.download)}丨${formatBytes(data.total)}`;
-  
+
   const resetText = expireDaysText(data);
   const meta = data.expire
     ? `到期${dateText(data.expire)}${resetText ? ' ' + resetText : ''}`
@@ -491,6 +491,7 @@ function renderTrafficSection(data, palette, options = {}) {
             font: { size: profile.metaSize, weight: "medium", family: "Menlo" },
             textColor: accent,
             maxLines: 1,
+            minScale: 0.7,
           },
           { type: "spacer" },
           {
@@ -538,8 +539,8 @@ function sectionProfile(options) {
     if (options.count >= 5) {
       return {
         icon: 15,
-        nameSize: 15.5,
-        percentSize: 15.5,
+        nameSize: 16,
+        percentSize: 16,
         valueSize: 11,
         metaSize: 10,
         progressHeight: 4,
@@ -571,9 +572,12 @@ function sectionProfile(options) {
   };
 }
 
+// 进度条：父 stack 固定高度，两个子 stack 用 flex 按比例分配宽度
 function renderProgress(value, accent, palette, height) {
-  const filled = Math.max(Math.round(Math.min(Math.max(value, 0), 1) * 100), 1);
-  const empty = Math.max(100 - filled, 1);
+  const safe = Math.min(Math.max(value, 0), 1);
+  // 已满/近乎为空时保留极小的一段，避免整条消失
+  const filled = safe >= 1 ? 100 : Math.max(Math.round(safe * 1000) / 10, 1);
+  const empty = 100 - filled;
 
   return {
     type: "stack",
@@ -621,7 +625,7 @@ function renderFooter(results, palette) {
   };
 }
 
-function renderAccessoryRectangular(results) {
+function renderAccessoryRectangular(results, refreshAfter) {
   const item = results[0];
   const resetText = expireDaysText(item);
   const expireText = item.expire
@@ -632,6 +636,7 @@ function renderAccessoryRectangular(results) {
 
   return {
     type: "widget",
+    refreshAfter,
     gap: 2,
     children: [
       {
@@ -641,11 +646,11 @@ function renderAccessoryRectangular(results) {
         gap: 4,
         children: [
           { type: "image", src: item.symbol || "sf-symbol:network", width: 11, height: 11 },
-          { type: "text", text: item.name || "Traffic", font: { size: "headline", weight: "bold" }, maxLines: 1 },
+          { type: "text", text: item.name || "Traffic", font: { size: 17, weight: "bold" }, maxLines: 1 },
         ],
       },
-      { type: "text", text: `${percent(item.remain, item.total)}  ⬆️${formatBytes(item.upload)} ⬇️${formatBytes(item.download)}丨${formatBytes(item.total)}`, font: { size: 11, family: "Menlo" } },
-      { type: "text", text: `今日 ${formatBytes(item.todayUsed)} 剩余 ${formatBytes(item.remain)}  ${expireText}`, font: { size: 11, family: "Menlo" }, opacity: 0.7 },
+      { type: "text", text: `${percent(item.remain, item.total)}  ⬆️${formatBytes(item.upload)} ⬇️${formatBytes(item.download)}丨${formatBytes(item.total)}`, font: { size: 11, family: "Menlo" }, maxLines: 1, minScale: 0.7 },
+      { type: "text", text: `今日 ${formatBytes(item.todayUsed)} 剩余 ${formatBytes(item.remain)}  ${expireText}`, font: { size: 11, family: "Menlo" }, opacity: 0.7, maxLines: 1, minScale: 0.7 },
     ],
   };
 }
@@ -653,7 +658,11 @@ function renderAccessoryRectangular(results) {
 function renderEmpty(family, refreshAfter) {
   const palette = makePalette("#7A84E8");
   if (family.startsWith("accessory")) {
-    return { type: "widget", children: [{ type: "text", text: "Configure url1" }] };
+    return {
+      type: "widget",
+      refreshAfter,
+      children: [{ type: "text", text: "Configure url1" }],
+    };
   }
 
   return {
@@ -668,7 +677,7 @@ function renderEmpty(family, refreshAfter) {
       {
         type: "text",
         text: "Configure url1 in Env",
-        font: { size: "caption1", weight: "medium" },
+        font: { size: 12, weight: "medium" },
         textColor: palette.warning,
         textAlign: "center",
       },
@@ -708,9 +717,10 @@ function divider(palette) {
 }
 
 function spacer(length) {
-  return { type: "spacer", length };
+  return { type: "spacer", length: Math.max(Math.round(length), 0) };
 }
 
+// 用 ctx.storage 记录每日基线；文档：ctx.storage.getJSON / setJSON
 function updateUsageHistory(ctx, account, used) {
   const now = new Date();
   const dailyKey = storageKey(account, "daily");
@@ -763,15 +773,10 @@ function updateUsageHistory(ctx, account, used) {
 
 function readJSON(ctx, key, fallback) {
   try {
-    const storage = ctx.storage || ctx.store || ctx.cache;
+    const storage = ctx.storage;
     if (!storage) return fallback;
-    if (typeof storage.getJSON === "function") {
-      const value = storage.getJSON(key);
-      return value == null ? fallback : value;
-    }
-    const raw = readStore(storage, key);
-    if (!raw) return fallback;
-    return typeof raw === "string" ? JSON.parse(raw) : raw;
+    const value = storage.getJSON(key);
+    return value == null ? fallback : value;
   } catch (_) {
     return fallback;
   }
@@ -779,27 +784,10 @@ function readJSON(ctx, key, fallback) {
 
 function writeJSON(ctx, key, value) {
   try {
-    const storage = ctx.storage || ctx.store || ctx.cache;
+    const storage = ctx.storage;
     if (!storage) return;
-    if (typeof storage.setJSON === "function") {
-      storage.setJSON(key, value);
-      return;
-    }
-    writeStore(storage, key, JSON.stringify(value));
+    storage.setJSON(key, value);
   } catch (_) {}
-}
-
-function readStore(storage, key) {
-  if (typeof storage.getItem === "function") return storage.getItem(key);
-  if (typeof storage.get === "function") return storage.get(key);
-  if (typeof storage.read === "function") return storage.read(key);
-  return null;
-}
-
-function writeStore(storage, key, value) {
-  if (typeof storage.setItem === "function") storage.setItem(key, value);
-  else if (typeof storage.set === "function") storage.set(key, value);
-  else if (typeof storage.write === "function") storage.write(value, key);
 }
 
 function storageKey(account, type) {
@@ -817,8 +805,6 @@ function cacheShape(data) {
     used: data.used,
     total: data.total,
     remain: data.remain,
-    todayUsed: data.todayUsed,
-    hourlyUsage: data.hourlyUsage,
     expire: data.expire,
     ok: data.ok,
     fetchedAt: data.fetchedAt,
@@ -884,6 +870,7 @@ function expireDaysText(data) {
   let resetDay = null;
   let expire = null;
 
+  // 显式传入的 resetDay 优先，便于用户手动指定每月重置日
   if (typeof data === "number" || typeof data === "string") {
     expire = Number(data);
   } else if (typeof data === "object") {
@@ -891,11 +878,10 @@ function expireDaysText(data) {
     expire = data.expire || null;
   }
 
-  // 1. 如果有到期时间戳，优先判断距离最终到期的剩余天数
+  // 1. 有到期时间戳时，优先判断距离最终到期的剩余天数
   if (expire) {
     const expireMs = expire > 1e12 ? expire : expire * 1000;
-    const now = Date.now();
-    const diffMs = expireMs - now;
+    const diffMs = expireMs - Date.now();
 
     if (diffMs <= 0) {
       return "已到期";
@@ -903,13 +889,12 @@ function expireDaysText(data) {
 
     const daysToExpire = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
-    // 当到期天数 <= 30 天时，优先显示“距离到期xx天”
     if (daysToExpire <= 30) {
       return `距离到期${daysToExpire}天`;
     }
   }
 
-  // 2. 若未手动在环境变量配置 resetDay，且到期时间大于 30 天，则提取该日期的“几号”作为每月重置日
+  // 2. 未手动配置 resetDay 且到期时间大于 30 天时，取到期日期的「几号」作为每月重置日
   if (!resetDay && expire) {
     const d = new Date(expire > 1e12 ? expire : expire * 1000);
     if (!isNaN(d.getTime())) {
@@ -917,7 +902,7 @@ function expireDaysText(data) {
     }
   }
 
-  // 3. 计算每月重置天数（已重置/到达重置日时，自动切入下个月重置倒计时）
+  // 3. 计算每月重置倒计时（已过重置日则顺延至下月）
   if (resetDay && resetDay >= 1 && resetDay <= 31) {
     const now = new Date();
     const year = now.getFullYear();
@@ -927,7 +912,6 @@ function expireDaysText(data) {
     let targetYear = year;
     let targetMonth = month;
 
-    // 当今天等于或超过重置日（表示当月已重置），目标计算推进至下个月
     if (today >= resetDay) {
       targetMonth += 1;
     }
