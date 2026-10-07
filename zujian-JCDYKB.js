@@ -9,6 +9,7 @@
 // url5/name5/reset5
 // url=订阅链接，name=订阅名称，reset=每月重置日（可忽略，脚本自动计算）
 
+// 小尺寸展示 1 行订阅（不推荐），中尺寸展示 2 行订阅，大尺寸最多展示 5 行订阅
 
 const DEFAULT_REFRESH_MINUTES = 60;
 const MAX_ACCOUNTS = 5;
