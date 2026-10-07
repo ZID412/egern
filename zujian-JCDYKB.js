@@ -2,13 +2,14 @@
 // 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 // 环境变量:
-// url1/name1/reset1
-// url2/name2/reset2
-// url3/name3/reset3
-// url4/name4/reset4
-// url5/name5/reset5
-// url=订阅链接，name=订阅名称，reset=每月重置日（可忽略，脚本自动计算）
+//   url1/name1/reset1
+//   url2/name2/reset2
+//   url3/name3/reset3
+//   url4/name4/reset4
+//   url5/name5/reset5
+//   url=订阅链接，name=订阅名称，reset=每月重置日（可忽略，脚本自动计算）
 
+// 订阅数量 ≤3 → 显示24小时条形柱，>3隐藏条形柱，保持紧凑布局
 // 小尺寸展示1行订阅，中尺寸展示2行订阅，大尺寸最多展示5行订阅
 // 锁屏小组件（accessory 系列）：展示1个订阅
 
@@ -193,6 +194,7 @@ async function loadTraffic(ctx, account) {
     cached: false,
     fetchedAt: Date.now(),
     error: "No data",
+    hourlyUsage: [],
   };
 
   try {
@@ -201,7 +203,8 @@ async function loadTraffic(ctx, account) {
     const download = Number(info.download || 0);
     const total = Number(info.total || 0);
     const used = upload + download;
-    const history = updateUsageHistory(ctx, account, used);
+    const dailyHistory = updateUsageHistory(ctx, account, used);
+    const hourlyHistory = collectHourlyStats(ctx, account, used);
     const data = {
       ...empty,
       upload,
@@ -209,12 +212,13 @@ async function loadTraffic(ctx, account) {
       used,
       total,
       remain: Math.max(total - used, 0),
-      todayUsed: history.todayUsed,
+      todayUsed: dailyHistory.todayUsed,
       expire: Number(info.expire || 0),
       ok: total > 0,
       cached: false,
       fetchedAt: Date.now(),
       error: "",
+      hourlyUsage: hourlyHistory.hourlyUsage || [],
     };
 
     writeJSON(ctx, storageKey(account, "cache"), cacheShape(data));
@@ -438,6 +442,9 @@ function renderTrafficSection(data, palette, options = {}) {
         ? "缓存"
         : statusText(data);
 
+  // 判断是否显示条形柱
+  const showBars = options.count && options.count <= 3;
+
   return {
     type: "stack",
     direction: "column",
@@ -483,6 +490,12 @@ function renderTrafficSection(data, palette, options = {}) {
         ],
       },
       spacer(profile.gapAfterHead),
+
+      // 条件渲染条形柱
+      showBars ? renderHourlyBars(data.hourlyUsage || [], accent, palette, profile.meterHeight, 24) : null,
+
+      spacer(showBars ? profile.gapAfterBars : profile.gapAfterHead),
+
       renderProgress(ratio(data.remain, data.total), accent, palette, profile.progressHeight),
       spacer(profile.gapAfterProgress),
       {
@@ -514,6 +527,9 @@ function renderTrafficSection(data, palette, options = {}) {
 }
 
 function sectionProfile(options) {
+  // 核心条件：订阅数量 ≤ 3 显示条形柱，否则隐藏
+  const showBars = options.count && options.count <= 3;
+
   if (options.small) {
     return {
       icon: 17,
@@ -521,8 +537,10 @@ function sectionProfile(options) {
       percentSize: 17,
       valueSize: 10,
       metaSize: 10,
+      meterHeight: showBars ? 16 : 0,
       progressHeight: 6,
       gapAfterHead: 6,
+      gapAfterBars: showBars ? 4 : 0,
       gapAfterProgress: 5,
     };
   }
@@ -534,9 +552,11 @@ function sectionProfile(options) {
       percentSize: 16,
       valueSize: 11,
       metaSize: 10,
+      meterHeight: showBars ? 10 : 0,
       progressHeight: 4,
       gapAfterHead: 4,
-      gapAfterProgress: 4,
+      gapAfterBars: showBars ? 3 : 0,
+      gapAfterProgress: 3,
     };
   }
 
@@ -548,8 +568,10 @@ function sectionProfile(options) {
         percentSize: 16,
         valueSize: 11,
         metaSize: 10,
+        meterHeight: 0, // 5个订阅时不显示条形柱
         progressHeight: 4,
         gapAfterHead: 2,
+        gapAfterBars: 0,
         gapAfterProgress: 2,
       };
     }
@@ -559,8 +581,10 @@ function sectionProfile(options) {
       percentSize: 16,
       valueSize: 11,
       metaSize: 10,
+      meterHeight: showBars ? 14 : 0,
       progressHeight: 5,
       gapAfterHead: 5,
+      gapAfterBars: showBars ? 4 : 0,
       gapAfterProgress: 5,
     };
   }
@@ -571,13 +595,46 @@ function sectionProfile(options) {
     percentSize: 18,
     valueSize: 12,
     metaSize: 11,
+    meterHeight: showBars ? 18 : 0,
     progressHeight: 5,
     gapAfterHead: 6,
+    gapAfterBars: showBars ? 4 : 0,
     gapAfterProgress: 6,
   };
 }
 
 // 进度条：父 stack 固定高度，两个子 stack 用 flex 按比例分配宽度
+function renderHourlyBars(values, accent, palette, height, count) {
+  const bars = normalizeBars(values, count);
+  const max = Math.max(...bars, 1);
+
+  return {
+    type: "stack",
+    direction: "row",
+    alignItems: "end",
+    gap: 3,
+    height,
+    children: bars.map((value) => {
+      const active = Number(value || 0) > 0;
+      const barHeight = active ? Math.max(4, Math.round(4 + (Number(value) / max) * (height - 4))) : 3;
+      return {
+        type: "stack",
+        flex: 1,
+        height: barHeight,
+        backgroundColor: active ? accent : palette.barIdle,
+        borderRadius: 2,
+        children: [],
+      };
+    }),
+  };
+}
+
+function normalizeBars(values, count) {
+  const bars = Array.isArray(values) ? values.slice(-count).map((item) => Number(item || 0)) : [];
+  while (bars.length < count) bars.unshift(0);
+  return bars;
+}
+
 function renderProgress(value, accent, palette, height) {
   const safe = Math.min(Math.max(value, 0), 1);
   // 已满/近乎为空时保留极小的一段，避免整条消失
@@ -699,6 +756,7 @@ function makePalette(accent) {
     dim: "#8C95A8",
     divider: "#2C34438A",
     track: "#2B3440C2",
+    barIdle: "#3B445661", // 24小时条形柱未激活时的颜色
     warning: "#FF6B6B",
     backgroundGradient: {
       type: "linear",
@@ -737,9 +795,62 @@ function updateUsageHistory(ctx, account, used) {
       : daily;
 
   const todayUsed = Math.max(used - Number(nextDaily.baselineUsed || 0), 0);
+  nextDaily.lastUsed = used;
+  nextDaily.updatedAt = Date.now();
   writeJSON(ctx, dailyKey, nextDaily);
 
   return { todayUsed };
+}
+
+// 收集每小时usage，用于条形柱显示
+function collectHourlyStats(ctx, account, used) {
+  const now = new Date();
+  const hourlyKey = storageKey(account, "hourly");
+  const hour = hourKey(now);
+
+  let hourly = readJSON(ctx, hourlyKey, { hours: [] });
+  if (!hourly || !Array.isArray(hourly.hours)) hourly = { hours: [] };
+
+  const last = hourly.hours[hourly.hours.length - 1];
+  if (last && Number(last.lastUsed || 0) > used) hourly = { hours: [] };
+
+  let current = hourly.hours.find((item) => item.key === hour);
+  if (!current) {
+    const previous = hourly.hours[hourly.hours.length - 1];
+    const startUsed = previous ? Number(previous.lastUsed || used) : used;
+    current = { key: hour, startUsed, lastUsed: used, delta: Math.max(used - startUsed, 0) };
+    hourly.hours.push(current);
+  } else {
+    current.lastUsed = used;
+    current.delta = Math.max(used - Number(current.startUsed || used), 0);
+  }
+
+  hourly.hours = hourly.hours.filter((item) => item && item.key).slice(-48);
+  const byHour = {};
+  hourly.hours.forEach((item) => {
+    byHour[item.key] = Number(item.delta || 0);
+  });
+
+  hourly.updatedAt = Date.now();
+  writeJSON(ctx, hourlyKey, hourly);
+
+  return {
+    hourlyUsage: lastHourKeys(24).map((key) => byHour[key] || 0),
+  };
+}
+
+function hourKey(date) {
+  return `${todayKey(date)}-${String(date.getHours()).padStart(2, "0")}`;
+}
+
+function lastHourKeys(count) {
+  const keys = [];
+  const now = new Date();
+  now.setMinutes(0, 0, 0);
+  for (let i = count - 1; i >= 0; i--) {
+    keys.push(hourKey(new Date(now.getTime() - i * 3600000)));
+  }
+  return keys;
 }
 
 function readJSON(ctx, key, fallback) {
@@ -779,6 +890,7 @@ function cacheShape(data) {
     expire: data.expire,
     ok: data.ok,
     fetchedAt: data.fetchedAt,
+    hourlyUsage: data.hourlyUsage || [],
   };
 }
 
@@ -900,16 +1012,30 @@ function expireDaysText(data) {
   return "";
 }
 
-function timeText(timestamp) {
-  const d = new Date(timestamp || Date.now());
-  const h = String(d.getHours()).padStart(2, "0");
-  const m = String(d.getMinutes()).padStart(2, "0");
-  return `${h}:${m}`;
-}
-
 function todayKey(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function hourKey(date) {
+  return `${todayKey(date)}-${String(date.getHours()).padStart(2, "0")}`;
+}
+
+function lastHourKeys(count) {
+  const keys = [];
+  const now = new Date();
+  now.setMinutes(0, 0, 0);
+  for (let i = count - 1; i >= 0; i--) {
+    keys.push(hourKey(new Date(now.getTime() - i * 3600000)));
+  }
+  return keys;
+}
+
+function timeText(timestamp) {
+  const d = new Date(timestamp || Date.now());
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
 }
