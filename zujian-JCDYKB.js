@@ -7,8 +7,8 @@
 // url3/name3/reset3
 // url4/name4/reset4
 // url5/name5/reset5
-
 // url=订阅链接，name=订阅名称，reset=每月重置日（可忽略，脚本自动计算）
+
 // 最多展示5行订阅
 
 const DEFAULT_REFRESH_MINUTES = 60;
@@ -252,12 +252,8 @@ async function fetchSubscriptionInfo(ctx, url) {
     { "User-Agent": "mihomo/1.19.3", Accept: "application/x-yaml,text/plain,*/*" },
   ];
 
-  // 全局时限：小组件有执行时间上限，宁可早失败走缓存，也不要被系统掐掉
   const deadline = Date.now() + 20000;
 
-  // UA 在最外层、方法在最内层：
-  //   同一个 UA + 同一个 URL 下，HEAD 不通就立刻用 GET 补，
-  //   不再拿另外两个 UA 对同一个 URL 重复发 HEAD。
   for (const headers of userAgents) {
     for (const target of variants) {
       for (const method of ["head", "get"]) {
@@ -440,7 +436,6 @@ function renderTrafficSection(data, palette, options = {}) {
         ? "缓存"
         : statusText(data);
 
-  // 判断是否显示条形柱
   const showBars = options.count && options.count <= 3;
 
   return {
@@ -488,12 +483,8 @@ function renderTrafficSection(data, palette, options = {}) {
         ],
       },
       spacer(profile.gapAfterHead),
-
-      // 条件渲染条形柱
       showBars ? renderHourlyBars(data.hourlyUsage || [], accent, palette, profile.meterHeight, 24) : null,
-
       spacer(showBars ? profile.gapAfterBars : profile.gapAfterHead),
-
       renderProgress(ratio(data.remain, data.total), accent, palette, profile.progressHeight),
       spacer(profile.gapAfterProgress),
       {
@@ -525,7 +516,6 @@ function renderTrafficSection(data, palette, options = {}) {
 }
 
 function sectionProfile(options) {
-  // 核心条件：订阅数量 ≤ 3 显示条形柱，否则隐藏
   const showBars = options.count && options.count <= 3;
 
   if (options.small) {
@@ -566,7 +556,7 @@ function sectionProfile(options) {
         percentSize: 16,
         valueSize: 11,
         metaSize: 10,
-        meterHeight: 0, // 5个订阅时不显示条形柱
+        meterHeight: 0,
         progressHeight: 4,
         gapAfterHead: 2,
         gapAfterBars: 0,
@@ -601,7 +591,6 @@ function sectionProfile(options) {
   };
 }
 
-// 进度条：父 stack 固定高度，两个子 stack 用 flex 按比例分配宽度
 function renderHourlyBars(values, accent, palette, height, count) {
   const bars = normalizeBars(values, count);
   const max = Math.max(...bars, 1);
@@ -635,7 +624,6 @@ function normalizeBars(values, count) {
 
 function renderProgress(value, accent, palette, height) {
   const safe = Math.min(Math.max(value, 0), 1);
-  // 已满/近乎为空时保留极小的一段，避免整条消失
   const filled = safe >= 1 ? 100 : Math.max(Math.round(safe * 1000) / 10, 1);
   const empty = 100 - filled;
 
@@ -754,7 +742,7 @@ function makePalette(accent) {
     dim: "#8C95A8",
     divider: "#2C34438A",
     track: "#2B3440C2",
-    barIdle: "#3B445661", // 24小时条形柱未激活时的颜色
+    barIdle: "#3B445661",
     warning: "#FF6B6B",
     backgroundGradient: {
       type: "linear",
@@ -780,7 +768,6 @@ function spacer(length) {
   return { type: "spacer", length: Math.max(Math.round(length), 0) };
 }
 
-// 用 ctx.storage 记录每日基线；文档：ctx.storage.getJSON / setJSON
 function updateUsageHistory(ctx, account, used) {
   const now = new Date();
   const dailyKey = storageKey(account, "daily");
@@ -800,7 +787,6 @@ function updateUsageHistory(ctx, account, used) {
   return { todayUsed };
 }
 
-// 收集每小时usage，用于条形柱显示
 function collectHourlyStats(ctx, account, used) {
   const now = new Date();
   const hourlyKey = storageKey(account, "hourly");
@@ -951,7 +937,6 @@ function expireDaysText(data) {
   let resetDay = null;
   let expire = null;
 
-  // 显式传入的 resetDay 优先，便于用户手动指定每月重置日
   if (typeof data === "number" || typeof data === "string") {
     expire = Number(data);
   } else if (typeof data === "object") {
@@ -959,7 +944,6 @@ function expireDaysText(data) {
     expire = data.expire || null;
   }
 
-  // 1. 有到期时间戳时，优先判断距离最终到期的剩余天数
   if (expire) {
     const expireMs = expire > 1e12 ? expire : expire * 1000;
     const diffMs = expireMs - Date.now();
@@ -975,7 +959,6 @@ function expireDaysText(data) {
     }
   }
 
-  // 2. 未手动配置 resetDay 且到期时间大于 30 天时，取到期日期的「几号」作为每月重置日
   if (!resetDay && expire) {
     const d = new Date(expire > 1e12 ? expire : expire * 1000);
     if (!isNaN(d.getTime())) {
@@ -983,7 +966,6 @@ function expireDaysText(data) {
     }
   }
 
-  // 3. 计算每月重置倒计时（已过重置日则顺延至下月）
   if (resetDay && resetDay >= 1 && resetDay <= 31) {
     const now = new Date();
     const year = now.getFullYear();
@@ -1015,20 +997,6 @@ function todayKey(date) {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
-}
-
-function hourKey(date) {
-  return `${todayKey(date)}-${String(date.getHours()).padStart(2, "0")}`;
-}
-
-function lastHourKeys(count) {
-  const keys = [];
-  const now = new Date();
-  now.setMinutes(0, 0, 0);
-  for (let i = count - 1; i >= 0; i--) {
-    keys.push(hourKey(new Date(now.getTime() - i * 3600000)));
-  }
-  return keys;
 }
 
 function timeText(timestamp) {
