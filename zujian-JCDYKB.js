@@ -2,14 +2,14 @@
 // 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 // 环境变量:
-//   url1/name1/reset1
-//   url2/name2/reset2
-//   url3/name3/reset3
-//   url4/name4/reset4
-//   url5/name5/reset5
-//   url=订阅链接，name=订阅名称，reset=每月重置日（可忽略，脚本自动计算）
+// url1/name1/reset1
+// url2/name2/reset2
+// url3/name3/reset3
+// url4/name4/reset4
+// url5/name5/reset5
+// url=订阅链接，name=订阅名称，reset=每月重置日（可忽略，脚本自动计算）
 
-// 订阅数量 ≤3 → 显示24小时条形柱，>3隐藏条形柱，保持紧凑布局
+// 订阅数量 ≤3 显示24小时条形柱，>3 隐藏条形柱，保持紧凑布局
 // 小尺寸展示1行订阅，中尺寸展示2行订阅，大尺寸最多展示5行订阅
 // 锁屏小组件（accessory 系列）：展示1个订阅
 
