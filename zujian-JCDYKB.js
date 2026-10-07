@@ -7,11 +7,9 @@
 // url3/name3/reset3
 // url4/name4/reset4
 // url5/name5/reset5
-// url=订阅链接，name=订阅名称，reset=每月重置日（可忽略，脚本自动计算）
 
-// 订阅数量 ≤3 显示24小时条形柱，>3 隐藏条形柱，保持紧凑布局
-// 小尺寸展示1行订阅，中尺寸展示2行订阅，大尺寸最多展示5行订阅
-// 锁屏小组件（accessory 系列）：展示1个订阅
+// url=订阅链接，name=订阅名称，reset=每月重置日（可忽略，脚本自动计算）
+// 最多展示5行订阅
 
 const DEFAULT_REFRESH_MINUTES = 60;
 const MAX_ACCOUNTS = 5;
