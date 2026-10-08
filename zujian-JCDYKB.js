@@ -21,7 +21,6 @@
 // - 协议 + 节点同填 -> 显示协议缩写「hy2 20节点丨今日...」
 // - 两者都不填 -> 保持整洁，直接显示「今日...」
 
-// 原版地址：https://raw.githubusercontent.com/Harley0214/Egern-widgest-SUBTraffic-monitor/main/ModernSubTraffic-Egern-Generic.js
 // ------------------------------------------
 
 const DEFAULT_REFRESH_MINUTES = 60;
