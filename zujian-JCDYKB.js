@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
 
 // 环境变量:（无效换成大写）
 // url1/name1/reset1/nodes1
@@ -825,6 +825,7 @@ function inlineText(results) {
 
 function formatBytes(bytes) {
   const value = Number(bytes || 0);
+  if (value <= 0) return "0KB";
   const units = ["B", "KB", "MB", "GB", "TB", "PB"];
   let n = value;
   let index = 0;
