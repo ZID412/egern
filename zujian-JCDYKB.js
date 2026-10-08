@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 // 环境变量配置说明
 //【必填项】URL1 ~ URL5：订阅链接（至少配置 URL1）
@@ -56,7 +56,7 @@ export default async function (ctx = {}) {
   const accounts = collectAccounts(ctx, MAX_ACCOUNTS).slice(0, limitForFamily(family));
 
   if (!accounts.length) {
-    return renderEmpty(family, refreshAfter, ctx);
+    return renderEmpty(family, refreshAfter);
   }
 
   const results = await Promise.all(accounts.map((account) => loadTraffic(ctx, account)));
@@ -88,7 +88,7 @@ export default async function (ctx = {}) {
     return renderAccessoryRectangular(results, refreshAfter);
   }
 
-  return renderWidget(family, results, refreshAfter, ctx);
+  return renderWidget(family, results, refreshAfter);
 }
 
 function normalizeFamily(value) {
@@ -414,37 +414,18 @@ function withParam(url, key, value) {
   return `${url}${url.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(value)}`;
 }
 
-function renderWidget(family, results, refreshAfter, ctx = {}) {
+function renderWidget(family, results, refreshAfter) {
   const compact = family === "systemMedium";
   const small = family === "systemSmall";
   const dense = !small && results.length >= 3;
   const isFive = results.length >= 5;
-  const isGlass = (envText(ctx.env, ["STYLE", "style"]) || "").toLowerCase() === "glass";
-  const palette = makePalette(results[0] && results[0].accent, isGlass);
-
-  const glassGradient = {
-    type: "linear",
-    colors: ["rgba(18, 24, 38, 0.72)", "rgba(10, 14, 22, 0.82)"],
-    stops: [0, 1],
-    startPoint: { x: 0, y: 0 },
-    endPoint: { x: 1, y: 1 },
-  };
-
-  const bg = isGlass
-    ? {
-        backgroundGradient: glassGradient,
-        borderWidth: 1,
-        borderColor: "rgba(255, 255, 255, 0.12)",
-      }
-    : {
-        backgroundGradient: palette.backgroundGradient,
-      };
+  const palette = makePalette(results[0] && results[0].accent);
 
   if (small) {
     const item = results[0];
     return {
       type: "widget",
-      ...bg,
+      backgroundGradient: palette.backgroundGradient,
       padding: [15, 15, 14, 15],
       refreshAfter,
       children: [
@@ -469,7 +450,7 @@ function renderWidget(family, results, refreshAfter, ctx = {}) {
 
   return {
     type: "widget",
-    ...bg,
+    backgroundGradient: palette.backgroundGradient,
     padding,
     refreshAfter,
     children: [
@@ -771,9 +752,8 @@ function renderAccessoryRectangular(results, refreshAfter) {
   };
 }
 
-function renderEmpty(family, refreshAfter, ctx = {}) {
-  const isGlass = (envText(ctx.env, ["STYLE", "style"]) || "").toLowerCase() === "glass";
-  const palette = makePalette("#7A84E8", isGlass);
+function renderEmpty(family, refreshAfter) {
+  const palette = makePalette("#7A84E8");
   if (family.startsWith("accessory")) {
     return {
       type: "widget",
@@ -782,29 +762,11 @@ function renderEmpty(family, refreshAfter, ctx = {}) {
     };
   }
 
-  const glassGradient = {
-    type: "linear",
-    colors: ["rgba(18, 24, 38, 0.72)", "rgba(10, 14, 22, 0.82)"],
-    stops: [0, 1],
-    startPoint: { x: 0, y: 0 },
-    endPoint: { x: 1, y: 1 },
-  };
-
-  const bg = isGlass
-    ? {
-        backgroundGradient: glassGradient,
-        borderWidth: 1,
-        borderColor: "rgba(255, 255, 255, 0.12)",
-      }
-    : {
-        backgroundGradient: palette.backgroundGradient,
-      };
-
   return {
     type: "widget",
     padding: 16,
     gap: 10,
-    ...bg,
+    backgroundGradient: palette.backgroundGradient,
     refreshAfter,
     children: [
       renderHeader([{ fetchedAt: Date.now() }], palette),
@@ -821,14 +783,14 @@ function renderEmpty(family, refreshAfter, ctx = {}) {
   };
 }
 
-function makePalette(accent, isGlass = false) {
+function makePalette(accent) {
   const accentColor = accent || "#7A84E8";
   return {
     accent: accentColor,
     text: "#F3F6FB",
-    dim: isGlass ? "rgba(255, 255, 255, 0.7)" : "#8C95A8",
-    divider: isGlass ? "rgba(255, 255, 255, 0.1)" : "#2C34438A",
-    track: isGlass ? "rgba(255, 255, 255, 0.15)" : "#2B3440C2",
+    dim: "#8C95A8",
+    divider: "#2C34438A",
+    track: "#2B3440C2",
     warning: "#FF6B6B",
     backgroundGradient: {
       type: "linear",
