@@ -1,4 +1,4 @@
-// ZID412 - Egern通用脚本小组件 - 机场订阅看板
+// ZID412 - Egern通用脚本小组件 - 机场订阅看板 (渐变液态玻璃版)
 // 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 // 环境变量配置说明
@@ -9,9 +9,10 @@
 // PROTOCOL1 ~ PROTOCOL5：协议备注（超长自动缩写：如 SS / Hy2）
 // NODES1 ~ NODES5：节点数量备注（只填纯数字如 20）
 // RESET1 ~ RESET5：每月重置日（1~31，不填写脚本自动推算，但自动推算可能不准确）
-// ACCENT1 ~ ACCENT5：专属主题色（脚本自动显示，可自定义如#46D66B、#58A6FF等HEX颜色代码）
+// ACCENT1 ~ ACCENT5：专属主题色（脚本自动显示，可自定义如#BF5AF2、#0A84FF等HEX颜色代码）
 
 //【选填项 - 全局设置】
+// WIDGET_TITLE：小组件标题（默认 Subs Dashboard）
 // REFRESH_MINUTES：小组件刷新间隔（单位：分钟，默认 60）
 // SHOW：筛选并指定排序（如填 1,3,4 或填名字，大组件最多展示 5 个）
 
@@ -21,7 +22,6 @@
 // - 协议 + 节点同填 -> 显示协议缩写「hy2 20节点丨今日...」
 // - 两者都不填 -> 保持整洁，直接显示「今日...」
 
-// 原版地址：https://raw.githubusercontent.com/Harley0214/Egern-widgest-SUBTraffic-monitor/main/ModernSubTraffic-Egern-Generic.js
 // ------------------------------------------
 
 const DEFAULT_REFRESH_MINUTES = 60;
@@ -111,7 +111,7 @@ function refreshMinutes(ctx) {
 function collectAccounts(ctx, max) {
   const env = ctx.env || {};
   const accounts = [];
-  const accents = ["#46D66B", "#7A84E8", "#58A6FF", "#FFB800", "#FF6B6B"];
+  const accents = ["#BF5AF2", "#0A84FF", "#30D158", "#FF9F0A", "#FF375F"];
 
   const shuffledSymbols = shuffleArray(RANDOM_SYMBOL_POOL);
 
@@ -127,6 +127,7 @@ function collectAccounts(ctx, max) {
       nodes: envText(env, [`NODES${i}`, `nodes${i}`, `NODE${i}`, `node${i}`]),
       accent: envText(env, [`ACCENT${i}`, `accent${i}`]) || accents[i - 1] || accents[0],
       symbol: shuffledSymbols[i - 1] || "sf-symbol:network",
+      widgetTitle: envText(env, ["WIDGET_TITLE", "widgetTitle", "TITLE", "title"]) || "Subs Dashboard",
     });
   }
 
@@ -154,7 +155,8 @@ function collectAccounts(ctx, max) {
       resetDay: null,
       nodes: envText(env, [aliasNodeKey, `NODES${nextSlot}`, `nodes${nextSlot}`, `NODE${nextSlot}`, `node${nextSlot}`]),
       accent,
-      symbol: shuffledSymbols[nextSlot - 1] || "sf-symbol:network"
+      symbol: shuffledSymbols[nextSlot - 1] || "sf-symbol:network",
+      widgetTitle: envText(env, ["WIDGET_TITLE", "widgetTitle", "TITLE", "title"]) || "Subs Dashboard",
     });
   }
 
@@ -414,6 +416,24 @@ function withParam(url, key, value) {
   return `${url}${url.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(value)}`;
 }
 
+// ---------------------------------------------------------------------------
+// 视觉：iOS 渐变液态玻璃
+// ---------------------------------------------------------------------------
+
+function bg() {
+  return {
+    type: "linear",
+    colors: [
+      { light: "#F3EEFF", dark: "#1A0F33" },
+      { light: "#EEF4FF", dark: "#0B1530" },
+      { light: "#F2FBF7", dark: "#06120E" },
+    ],
+    stops: [0, 0.55, 1],
+    startPoint: { x: 0, y: 0 },
+    endPoint: { x: 1, y: 1 },
+  };
+}
+
 function renderWidget(family, results, refreshAfter) {
   const compact = family === "systemMedium";
   const small = family === "systemSmall";
@@ -426,14 +446,12 @@ function renderWidget(family, results, refreshAfter) {
     return {
       type: "widget",
       backgroundGradient: palette.backgroundGradient,
-      padding: [15, 15, 14, 15],
+      padding: [13, 14, 12, 14],
       refreshAfter,
       children: [
         renderHeader([item], palette, { small: true }),
-        spacer(8),
-        divider(palette),
-        spacer(8),
-        renderTrafficSection(item, palette, { small: true, compact: true }),
+        { type: "spacer" },
+        renderTrafficCard(item, palette, { small: true, compact: true, count: 1 }),
         { type: "spacer" },
         renderFooter(results, palette),
       ],
@@ -441,12 +459,12 @@ function renderWidget(family, results, refreshAfter) {
   }
 
   const padding = compact
-    ? [12, 15, 11, 15]
+    ? [11, 14, 11, 14]
     : isFive
-      ? [12, 16, 10, 16]
-      : [16, 18, 14, 18];
+      ? [10, 14, 10, 14]
+      : [13, 16, 13, 16];
 
-  const gap = compact ? 5 : isFive ? 4 : dense ? 6 : 8;
+  const gap = compact ? 5 : isFive ? 3.5 : dense ? 4.5 : 6;
 
   return {
     type: "widget",
@@ -455,30 +473,29 @@ function renderWidget(family, results, refreshAfter) {
     refreshAfter,
     children: [
       renderHeader(results, palette, { compact, dense }),
-      spacer(gap),
-      divider(palette),
-      spacer(gap),
-      ...interleaveSections(results, palette, { compact, dense, count: results.length }),
+      spacer(compact ? 6 : isFive ? 4 : 6),
+      ...interleaveCards(results, palette, { compact, dense, count: results.length, gap }),
       ...(family === "systemLarge" || family === "systemExtraLarge"
-        ? [spacer(gap), divider(palette), spacer(gap), renderFooter(results, palette)]
+        ? [{ type: "spacer" }, renderFooter(results, palette)]
         : []),
     ],
   };
 }
 
-function interleaveSections(results, palette, options) {
+function interleaveCards(results, palette, options) {
   const out = [];
-  const gap = options.compact ? 4 : options.count >= 5 ? 3 : options.dense ? 5 : 7;
+  const gap = options.gap || 5;
   results.forEach((item, index) => {
-    out.push(renderTrafficSection(item, palette, { ...options, index, count: results.length }));
+    out.push(renderTrafficCard(item, palette, { ...options, index, count: results.length }));
     if (index < results.length - 1) {
-      out.push(spacer(gap), divider(palette), spacer(gap));
+      out.push(spacer(gap));
     }
   });
   return out;
 }
 
 function renderHeader(results, palette, options = {}) {
+  const title = (results[0] && results[0].widgetTitle) || "Subs Dashboard";
   return {
     type: "stack",
     direction: "row",
@@ -494,8 +511,8 @@ function renderHeader(results, palette, options = {}) {
       },
       {
         type: "text",
-        text: "Subs Dashboard",
-        font: { size: options.compact ? 16 : 18, weight: "semibold" },
+        text: title,
+        font: { size: options.compact ? 15 : 17, weight: "semibold" },
         textColor: palette.text,
         maxLines: 1,
       },
@@ -503,10 +520,41 @@ function renderHeader(results, palette, options = {}) {
       {
         type: "text",
         text: timeText(newestResult(results).fetchedAt),
-        font: { size: options.compact ? 10 : 12, weight: "medium", family: "Menlo" },
+        font: { size: options.compact ? 10 : 11, weight: "medium", family: "Menlo" },
         textColor: palette.dim,
         maxLines: 1,
       },
+    ],
+  };
+}
+
+function renderTrafficCard(item, palette, options = {}) {
+  const isSmall = options.small;
+  const isCompact = options.compact;
+  const isDense = options.dense;
+  const isFive = options.count >= 5;
+
+  const cardPadding = isSmall
+    ? [8, 10]
+    : isCompact
+      ? [5, 10]
+      : isFive
+        ? [4, 9]
+        : isDense
+          ? [5, 10]
+          : [7, 12];
+
+  const borderRadius = isSmall || isFive ? 13 : 15;
+
+  return {
+    type: "stack",
+    direction: "column",
+    gap: 0,
+    padding: cardPadding,
+    borderRadius,
+    backgroundColor: palette.glass,
+    children: [
+      renderTrafficSection(item, palette, options),
     ],
   };
 }
@@ -568,7 +616,7 @@ function renderTrafficSection(data, palette, options = {}) {
             type: "text",
             text: rightValue,
             font: { size: profile.valueSize, weight: "medium", family: "Menlo" },
-            textColor: accent,
+            textColor: palette.dim,
             maxLines: 1,
             minScale: 0.72,
           },
@@ -586,7 +634,7 @@ function renderTrafficSection(data, palette, options = {}) {
             type: "text",
             text: leftMeta,
             font: { size: profile.metaSize, weight: "medium", family: "Menlo" },
-            textColor: accent,
+            textColor: palette.dim,
             maxLines: 1,
             minScale: 0.7,
           },
@@ -595,7 +643,7 @@ function renderTrafficSection(data, palette, options = {}) {
             type: "text",
             text: meta,
             font: { size: profile.metaSize, weight: "medium", family: "Menlo" },
-            textColor: data.ok ? accent : palette.warning,
+            textColor: data.ok ? palette.dim : palette.warning,
             maxLines: 1,
             minScale: 0.7,
           },
@@ -608,64 +656,64 @@ function renderTrafficSection(data, palette, options = {}) {
 function sectionProfile(options) {
   if (options.small) {
     return {
-      icon: 17,
-      nameSize: 17,
-      percentSize: 17,
+      icon: 16,
+      nameSize: 16,
+      percentSize: 16,
       valueSize: 10,
-      metaSize: 10,
-      progressHeight: 6,
-      gapAfterHead: 6,
-      gapAfterProgress: 5,
-    };
-  }
-
-  if (options.compact) {
-    return {
-      icon: 16,
-      nameSize: 16,
-      percentSize: 16,
-      valueSize: 11,
-      metaSize: 10,
-      progressHeight: 4,
-      gapAfterHead: 4,
-      gapAfterProgress: 4,
-    };
-  }
-
-  if (options.dense) {
-    if (options.count >= 5) {
-      return {
-        icon: 15,
-        nameSize: 16,
-        percentSize: 16,
-        valueSize: 11,
-        metaSize: 10,
-        progressHeight: 4,
-        gapAfterHead: 2,
-        gapAfterProgress: 2,
-      };
-    }
-    return {
-      icon: 16,
-      nameSize: 16,
-      percentSize: 16,
-      valueSize: 11,
-      metaSize: 10,
+      metaSize: 9.5,
       progressHeight: 5,
       gapAfterHead: 5,
       gapAfterProgress: 5,
     };
   }
 
+  if (options.compact) {
+    return {
+      icon: 14.5,
+      nameSize: 15,
+      percentSize: 15,
+      valueSize: 10,
+      metaSize: 9,
+      progressHeight: 3.5,
+      gapAfterHead: 3,
+      gapAfterProgress: 3,
+    };
+  }
+
+  if (options.dense) {
+    if (options.count >= 5) {
+      return {
+        icon: 13.5,
+        nameSize: 14,
+        percentSize: 14,
+        valueSize: 9.5,
+        metaSize: 8.5,
+        progressHeight: 3,
+        gapAfterHead: 2,
+        gapAfterProgress: 2,
+      };
+    }
+    return {
+      icon: 14.5,
+      nameSize: 15,
+      percentSize: 15,
+      valueSize: 10,
+      metaSize: 9,
+      progressHeight: 3.5,
+      gapAfterHead: 3,
+      gapAfterProgress: 3,
+    };
+  }
+
   return {
-    icon: 18,
-    nameSize: 18,
-    percentSize: 18,
-    valueSize: 12,
-    metaSize: 11,
-    progressHeight: 5,
-    gapAfterHead: 6,
-    gapAfterProgress: 6,
+    icon: 16,
+    nameSize: 16,
+    percentSize: 16,
+    valueSize: 11,
+    metaSize: 9.5,
+    progressHeight: 4.5,
+    gapAfterHead: 5,
+    gapAfterProgress: 5,
   };
 }
 
@@ -706,14 +754,14 @@ function renderFooter(results, palette) {
       {
         type: "text",
         text: `${results.length} Subscription${results.length > 1 ? "s" : ""}`,
-        font: { size: 12, weight: "semibold" },
+        font: { size: 11, weight: "semibold" },
         textColor: palette.dim,
       },
       { type: "spacer" },
       {
         type: "text",
         text: `Used ${formatBytes(total.used)}丨${formatBytes(total.total)}`,
-        font: { size: 12, weight: "medium", family: "Menlo" },
+        font: { size: 11, weight: "medium", family: "Menlo" },
         textColor: palette.dim,
         maxLines: 1,
         minScale: 0.72,
@@ -753,7 +801,7 @@ function renderAccessoryRectangular(results, refreshAfter) {
 }
 
 function renderEmpty(family, refreshAfter) {
-  const palette = makePalette("#7A84E8");
+  const palette = makePalette("#BF5AF2");
   if (family.startsWith("accessory")) {
     return {
       type: "widget",
@@ -772,11 +820,29 @@ function renderEmpty(family, refreshAfter) {
       renderHeader([{ fetchedAt: Date.now() }], palette),
       { type: "spacer" },
       {
-        type: "text",
-        text: "Configure URL1 in Env",
-        font: { size: 12, weight: "medium" },
-        textColor: palette.warning,
-        textAlign: "center",
+        type: "stack",
+        direction: "column",
+        alignItems: "center",
+        gap: 6,
+        padding: 14,
+        borderRadius: 16,
+        backgroundColor: palette.glass,
+        children: [
+          {
+            type: "text",
+            text: "Configure URL1 in Env",
+            font: { size: 13, weight: "semibold" },
+            textColor: palette.warning,
+            textAlign: "center",
+          },
+          {
+            type: "text",
+            text: "请在环境变量中配置订阅地址 URL1",
+            font: { size: 11, weight: "medium" },
+            textColor: palette.dim,
+            textAlign: "center",
+          },
+        ],
       },
       { type: "spacer" },
     ],
@@ -784,21 +850,16 @@ function renderEmpty(family, refreshAfter) {
 }
 
 function makePalette(accent) {
-  const accentColor = accent || "#7A84E8";
+  const accentColor = accent || "#BF5AF2";
   return {
     accent: accentColor,
-    text: "#F3F6FB",
-    dim: "#8C95A8",
-    divider: "#2C34438A",
-    track: "#2B3440C2",
-    warning: "#FF6B6B",
-    backgroundGradient: {
-      type: "linear",
-      colors: ["#090D15FA", "#0D121DFA", "#111725FA"],
-      stops: [0, 0.55, 1],
-      startPoint: { x: 0, y: 0 },
-      endPoint: { x: 1, y: 1 },
-    },
+    text: { light: "#000000", dark: "#FFFFFF" },
+    dim: { light: "#3C3C4399", dark: "#EBEBF599" },
+    glass: { light: "#FFFFFFA6", dark: "#FFFFFF1A" },
+    divider: { light: "#00000010", dark: "#FFFFFF15" },
+    track: { light: "#00000010", dark: "#FFFFFF20" },
+    warning: { light: "#FF3B30", dark: "#FF453A" },
+    backgroundGradient: bg(),
   };
 }
 
