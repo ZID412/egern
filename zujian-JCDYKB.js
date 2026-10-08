@@ -14,7 +14,7 @@
 //【选填项 - 全局设置】
 // REFRESH_MINUTES：小组件刷新间隔（单位：分钟，默认 60）
 // SHOW：筛选并指定排序（如填 1,3,4 或填名字，大组件最多展示 5 个）
-// STYLE：外观风格（填 glass 启用半透明液态玻璃质感背景；不填默认深色实色渐变背景）
+// STYLE：外观风格（填 glass 开启 iOS 原生透明毛玻璃背景；不填则使用默认深色渐变背景）
 
 //【协议/节点备注显示逻辑】
 // - 仅填节点数 -> 显示「20节点丨今日...」
@@ -423,23 +423,7 @@ function renderWidget(family, results, refreshAfter, ctx = {}) {
   const isGlass = (envText(ctx.env, ["STYLE", "style"]) || "").toLowerCase() === "glass";
   const palette = makePalette(results[0] && results[0].accent, isGlass);
 
-  const glassGradient = {
-    type: "linear",
-    colors: ["rgba(18, 24, 38, 0.72)", "rgba(10, 14, 22, 0.82)"],
-    stops: [0, 1],
-    startPoint: { x: 0, y: 0 },
-    endPoint: { x: 1, y: 1 },
-  };
-
-  const bg = isGlass
-    ? {
-        backgroundGradient: glassGradient,
-        borderWidth: 1,
-        borderColor: "rgba(255, 255, 255, 0.12)",
-      }
-    : {
-        backgroundGradient: palette.backgroundGradient,
-      };
+  const bg = isGlass ? {} : { backgroundGradient: palette.backgroundGradient };
 
   if (small) {
     const item = results[0];
@@ -783,23 +767,7 @@ function renderEmpty(family, refreshAfter, ctx = {}) {
     };
   }
 
-  const glassGradient = {
-    type: "linear",
-    colors: ["rgba(18, 24, 38, 0.72)", "rgba(10, 14, 22, 0.82)"],
-    stops: [0, 1],
-    startPoint: { x: 0, y: 0 },
-    endPoint: { x: 1, y: 1 },
-  };
-
-  const bg = isGlass
-    ? {
-        backgroundGradient: glassGradient,
-        borderWidth: 1,
-        borderColor: "rgba(255, 255, 255, 0.12)",
-      }
-    : {
-        backgroundGradient: palette.backgroundGradient,
-      };
+  const bg = isGlass ? {} : { backgroundGradient: palette.backgroundGradient };
 
   return {
     type: "widget",
