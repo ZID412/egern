@@ -954,7 +954,7 @@ function expireDaysText(data) {
     const daysToExpire = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
     if (daysToExpire <= 30) {
-      return `到期${daysToExpire}天`;
+      return `距离到期${daysToExpire}天`;
     }
   }
 
@@ -985,7 +985,7 @@ function expireDaysText(data) {
     const todayZero = new Date(year, month, today);
 
     const daysLeft = Math.round((targetDate.getTime() - todayZero.getTime()) / (1000 * 60 * 60 * 24));
-    return `重置${daysLeft}天`;
+    return `距离重置${daysLeft}天`;
   }
 
   return "";
