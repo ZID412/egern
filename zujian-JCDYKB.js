@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
 
 // 环境变量:
 // url1/name1/reset1
@@ -491,7 +491,7 @@ function renderTrafficSection(data, palette, options = {}) {
         children: [
           {
             type: "text",
-            text: `今日使用${formatBytes(data.todayUsed)} 剩余${formatBytes(data.remain)}`,
+            text: `今日${formatBytes(data.todayUsed)} 剩余${formatBytes(data.remain)}`,
             font: { size: profile.metaSize, weight: "medium", family: "Menlo" },
             textColor: accent,
             maxLines: 1,
@@ -860,7 +860,7 @@ function expireDaysText(data) {
     const daysToExpire = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
     if (daysToExpire <= 30) {
-      return `距离到期${daysToExpire}天`;
+      return `到期${daysToExpire}天`;
     }
   }
 
@@ -893,7 +893,7 @@ function expireDaysText(data) {
     const todayZero = new Date(year, month, today);
 
     const daysLeft = Math.round((targetDate.getTime() - todayZero.getTime()) / (1000 * 60 * 60 * 24));
-    return `距离重置${daysLeft}天`;
+    return `重置${daysLeft}天`;
   }
 
   return "";
