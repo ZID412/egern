@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
 
 // 环境变量:（无效换成大写）
 // url1/name1/reset1/nodes1
@@ -591,7 +591,7 @@ function sectionProfile(options) {
   };
 }
 
-// 进度条：父 stack 固定高度，两个子 stack 用 flex 按比例分配宽度；若配置了节点数，在右侧自适应显示
+// 进度条：若配置了节点数，节点数显示在左侧，进度条自适应撑满剩余右侧宽度
 function renderProgress(value, accent, palette, height, nodes, profile = {}) {
   const safe = Math.min(Math.max(value, 0), 1);
   // 已满/近乎为空时保留极小的一段，避免整条消失
@@ -618,7 +618,6 @@ function renderProgress(value, accent, palette, height, nodes, profile = {}) {
     alignItems: "center",
     gap: 7,
     children: [
-      bar,
       {
         type: "text",
         text: nodes,
@@ -626,6 +625,7 @@ function renderProgress(value, accent, palette, height, nodes, profile = {}) {
         textColor: palette.dim,
         maxLines: 1,
       },
+      bar,
     ],
   };
 }
