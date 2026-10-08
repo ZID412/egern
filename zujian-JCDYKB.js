@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 // 环境变量:（无效换成大写）
 // url1/name1/reset1/nodes1
@@ -10,6 +10,7 @@
 // url=订阅链接，name=订阅名称，reset=每月重置日（可忽略，脚本自动计算），nodes=自定义节点数（没啥用的功能，可忽略）
 
 // 小尺寸展示 1 行订阅（不推荐），中尺寸展示 2 行订阅，大尺寸最多展示 5 行订阅
+
 
 const DEFAULT_REFRESH_MINUTES = 60;
 const MAX_ACCOUNTS = 5;
@@ -480,6 +481,18 @@ function renderTrafficSection(data, palette, options = {}) {
             textColor: accent,
             maxLines: 1,
           },
+          ...(data.nodes
+            ? [
+                {
+                  type: "text",
+                  text: data.nodes,
+                  font: { size: profile.metaSize, weight: "medium", family: "Menlo" },
+                  textColor: accent,
+                  maxLines: 1,
+                  minScale: 0.7,
+                },
+              ]
+            : []),
           { type: "spacer" },
           {
             type: "text",
@@ -492,7 +505,7 @@ function renderTrafficSection(data, palette, options = {}) {
         ],
       },
       spacer(profile.gapAfterHead),
-      renderProgress(ratio(data.remain, data.total), accent, palette, profile.progressHeight, data.nodes, profile),
+      renderProgress(ratio(data.remain, data.total), accent, palette, profile.progressHeight),
       spacer(profile.gapAfterProgress),
       {
         type: "stack",
@@ -530,7 +543,6 @@ function sectionProfile(options) {
       percentSize: 17,
       valueSize: 10,
       metaSize: 10,
-      nodeSize: 10,
       progressHeight: 6,
       gapAfterHead: 6,
       gapAfterProgress: 5,
@@ -544,7 +556,6 @@ function sectionProfile(options) {
       percentSize: 16,
       valueSize: 11,
       metaSize: 10,
-      nodeSize: 10,
       progressHeight: 4,
       gapAfterHead: 4,
       gapAfterProgress: 4,
@@ -559,7 +570,6 @@ function sectionProfile(options) {
         percentSize: 16,
         valueSize: 11,
         metaSize: 10,
-        nodeSize: 10,
         progressHeight: 4,
         gapAfterHead: 2,
         gapAfterProgress: 2,
@@ -571,7 +581,6 @@ function sectionProfile(options) {
       percentSize: 16,
       valueSize: 11,
       metaSize: 10,
-      nodeSize: 10,
       progressHeight: 5,
       gapAfterHead: 5,
       gapAfterProgress: 5,
@@ -584,48 +593,27 @@ function sectionProfile(options) {
     percentSize: 18,
     valueSize: 12,
     metaSize: 11,
-    nodeSize: 11,
     progressHeight: 5,
     gapAfterHead: 6,
     gapAfterProgress: 6,
   };
 }
 
-// 进度条：若配置了节点数，节点数显示在左侧，进度条自适应撑满剩余右侧宽度
-function renderProgress(value, accent, palette, height, nodes, profile = {}) {
+// 进度条：父 stack 固定高度，两个子 stack 用 flex 按比例分配宽度，恢复满宽展示
+function renderProgress(value, accent, palette, height) {
   const safe = Math.min(Math.max(value, 0), 1);
   // 已满/近乎为空时保留极小的一段，避免整条消失
   const filled = safe >= 1 ? 100 : Math.max(Math.round(safe * 1000) / 10, 1);
   const empty = 100 - filled;
 
-  const bar = {
-    type: "stack",
-    direction: "row",
-    alignItems: "center",
-    flex: nodes ? 1 : undefined,
-    gap: 0,
-    children: [
-      { type: "stack", flex: filled, height, backgroundColor: accent, borderRadius: 99, children: [] },
-      { type: "stack", flex: empty, height, backgroundColor: palette.track, borderRadius: 99, children: [] },
-    ],
-  };
-
-  if (!nodes) return bar;
-
   return {
     type: "stack",
     direction: "row",
     alignItems: "center",
-    gap: 7,
+    gap: 0,
     children: [
-      {
-        type: "text",
-        text: nodes,
-        font: { size: profile.nodeSize || 10, weight: "medium" },
-        textColor: palette.dim,
-        maxLines: 1,
-      },
-      bar,
+      { type: "stack", flex: filled, height, backgroundColor: accent, borderRadius: 99, children: [] },
+      { type: "stack", flex: empty, height, backgroundColor: palette.track, borderRadius: 99, children: [] },
     ],
   };
 }
