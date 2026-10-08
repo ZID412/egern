@@ -18,7 +18,7 @@
 //【协议/节点备注显示逻辑】
 // - 仅填节点数 -> 显示「20节点丨今日...」
 // - 仅填协议名 -> 显示「Trojan丨今日...」（超长如 Shadowsocks 自动缩为 SS）
-// - 协议 + 节点同填 -> 显示「hy2 20节点丨今日...」
+// - 协议 + 节点同填 -> 显示协议缩写「hy2 20节点丨今日...」
 // - 两者都不填 -> 保持整洁，直接显示「今日...」
 
 // 原版地址：https://raw.githubusercontent.com/Harley0214/Egern-widgest-SUBTraffic-monitor/main/ModernSubTraffic-Egern-Generic.js
