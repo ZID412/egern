@@ -14,6 +14,7 @@
 //【选填项 - 全局设置】
 // REFRESH_MINUTES：小组件刷新间隔（单位：分钟，默认 60）
 // SHOW：筛选并指定排序（如填 1,3,4 或填名字，大组件最多展示 5 个）
+// STYLE：外观风格（填 glass 开启 iOS 27 液态玻璃透明背景；不填则保持默认深色高级渐变背景）
 
 //【协议/节点备注显示逻辑】
 // - 仅填节点数 -> 显示「20节点丨今日...」
@@ -56,7 +57,7 @@ export default async function (ctx = {}) {
   const accounts = collectAccounts(ctx, MAX_ACCOUNTS).slice(0, limitForFamily(family));
 
   if (!accounts.length) {
-    return renderEmpty(family, refreshAfter);
+    return renderEmpty(family, refreshAfter, ctx);
   }
 
   const results = await Promise.all(accounts.map((account) => loadTraffic(ctx, account)));
@@ -88,7 +89,7 @@ export default async function (ctx = {}) {
     return renderAccessoryRectangular(results, refreshAfter);
   }
 
-  return renderWidget(family, results, refreshAfter);
+  return renderWidget(family, results, refreshAfter, ctx);
 }
 
 function normalizeFamily(value) {
@@ -414,18 +415,28 @@ function withParam(url, key, value) {
   return `${url}${url.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(value)}`;
 }
 
-function renderWidget(family, results, refreshAfter) {
+function renderWidget(family, results, refreshAfter, ctx = {}) {
   const compact = family === "systemMedium";
   const small = family === "systemSmall";
   const dense = !small && results.length >= 3;
   const isFive = results.length >= 5;
-  const palette = makePalette(results[0] && results[0].accent);
+  const isGlass = (envText(ctx.env, ["STYLE", "style"]) || "").toLowerCase() === "glass";
+  const palette = makePalette(results[0] && results[0].accent, isGlass);
+
+  const bg = isGlass
+    ? {
+        borderWidth: 1,
+        borderColor: "rgba(255, 255, 255, 0.08)",
+      }
+    : {
+        backgroundGradient: palette.backgroundGradient,
+      };
 
   if (small) {
     const item = results[0];
     return {
       type: "widget",
-      backgroundGradient: palette.backgroundGradient,
+      ...bg,
       padding: [15, 15, 14, 15],
       refreshAfter,
       children: [
@@ -450,7 +461,7 @@ function renderWidget(family, results, refreshAfter) {
 
   return {
     type: "widget",
-    backgroundGradient: palette.backgroundGradient,
+    ...bg,
     padding,
     refreshAfter,
     children: [
@@ -752,8 +763,9 @@ function renderAccessoryRectangular(results, refreshAfter) {
   };
 }
 
-function renderEmpty(family, refreshAfter) {
-  const palette = makePalette("#7A84E8");
+function renderEmpty(family, refreshAfter, ctx = {}) {
+  const isGlass = (envText(ctx.env, ["STYLE", "style"]) || "").toLowerCase() === "glass";
+  const palette = makePalette("#7A84E8", isGlass);
   if (family.startsWith("accessory")) {
     return {
       type: "widget",
@@ -762,11 +774,20 @@ function renderEmpty(family, refreshAfter) {
     };
   }
 
+  const bg = isGlass
+    ? {
+        borderWidth: 1,
+        borderColor: "rgba(255, 255, 255, 0.08)",
+      }
+    : {
+        backgroundGradient: palette.backgroundGradient,
+      };
+
   return {
     type: "widget",
     padding: 16,
     gap: 10,
-    backgroundGradient: palette.backgroundGradient,
+    ...bg,
     refreshAfter,
     children: [
       renderHeader([{ fetchedAt: Date.now() }], palette),
@@ -783,14 +804,14 @@ function renderEmpty(family, refreshAfter) {
   };
 }
 
-function makePalette(accent) {
+function makePalette(accent, isGlass = false) {
   const accentColor = accent || "#7A84E8";
   return {
     accent: accentColor,
     text: "#F3F6FB",
-    dim: "#8C95A8",
-    divider: "#2C34438A",
-    track: "#2B3440C2",
+    dim: isGlass ? "rgba(255, 255, 255, 0.7)" : "#8C95A8",
+    divider: isGlass ? "rgba(255, 255, 255, 0.1)" : "#2C34438A",
+    track: isGlass ? "rgba(255, 255, 255, 0.15)" : "#2B3440C2",
     warning: "#FF6B6B",
     backgroundGradient: {
       type: "linear",
