@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
 
 // 环境变量配置说明（Egern Env）
 //【必填项】
@@ -494,7 +494,7 @@ function renderHeader(results, palette, options = {}) {
       },
       {
         type: "text",
-        text: "Traffic Monitor",
+        text: "Subscription Dashboard",
         font: { size: options.compact ? 16 : 18, weight: "semibold" },
         textColor: palette.text,
         maxLines: 1,
