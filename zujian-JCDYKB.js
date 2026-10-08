@@ -19,10 +19,10 @@
 //【协议/节点备注显示逻辑】
 // - 仅填节点数 -> 显示「20节点丨今日...」
 // - 仅填协议名 -> 显示「Trojan丨今日...」（超长如 Shadowsocks 自动缩为 SS）
-// - 协议 + 节点同填 -> 显示最简紧凑样式「ss 20丨今日...」
+// - 协议 + 节点同填 -> 显示「hy2 20节点丨今日...」
 // - 两者都不填 -> 保持整洁，直接显示「今日...」
 
-//==========================================
+// ------------------------------------------
 
 const DEFAULT_REFRESH_MINUTES = 60;
 const MAX_ACCOUNTS = 5;
@@ -234,7 +234,7 @@ function formatPrefix(protocol, nodes) {
   const pureN = rawN.replace(/节点$/, "");
 
   if (rawP && pureN) {
-    return `${shortestProtocol(rawP)} ${pureN}`;
+    return `${shortestProtocol(rawP)} ${pureN}节点`;
   }
   if (rawP) {
     return smartProtocol(rawP);
