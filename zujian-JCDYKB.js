@@ -1,15 +1,28 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
-// 环境变量:（无效换成大写）
-// url1/name1/reset1/nodes1
-// url2/name2/reset2/nodes2
-// url3/name3/reset3/nodes3
-// url4/name4/reset4/nodes4
-// url5/name5/reset5/nodes5
-// url=订阅链接，name=订阅名称，reset=每月重置日（可忽略，脚本自动计算），nodes=自定义节点数（没啥用的功能，可忽略）
+//   环境变量配置说明（Egern Env）
+// 【必填项】
+//   URL1 ~ URL5：订阅链接（至少配置 URL1）
 
-// 小尺寸展示 1 行订阅（不推荐），中尺寸展示 2 行订阅，大尺寸最多展示 5 行订阅
+// 【选填项 - 基础信息】
+//   NAME1 ~ NAME5：订阅名称（不填默认显示 Sub 1、Sub 2...）
+//   PROTOCOL1 ~ PROTOCOL5：协议备注（如 SS / Trojan / VLESS / Hy2，超长自动缩写）
+//   NODES1 ~ NODES5：节点数量（只填纯数字如 20）
+//   RESET1 ~ RESET5：每月重置日（1~31，脚本自动推算，推算不准时可手动填）
+//   ACCENT1 ~ ACCENT5：专属主题色（脚本自动显示，可自定义如 #46D66B、#58A6FF 等 HEX 颜色代码）
+
+// 【选填项 - 全局设置】
+//   REFRESH_MINUTES：小组件刷新间隔（单位：分钟，默认 60）
+//   SHOW：筛选并指定排序（如填 1,3,4 或填名字，大组件最多展示 5 个）
+
+// 【显示逻辑速查】
+//   - 仅填节点数 -> 显示「20节点丨今日...」
+//   - 仅填协议名 -> 显示「Trojan丨今日...」（超长如 Shadowsocks 自动缩为 SS）
+//   - 协议 + 节点同填 -> 显示最简紧凑样式「ss 20丨今日...」
+//   - 两者都不填 -> 保持整洁，直接显示「今日...」
+
+==========================================
 
 const DEFAULT_REFRESH_MINUTES = 60;
 const MAX_ACCOUNTS = 5;
@@ -90,7 +103,7 @@ function limitForFamily(family) {
 
 function refreshMinutes(ctx) {
   const env = ctx.env || {};
-  const raw = envValue(env, ["refreshMinutes", "REFRESH_MINUTES", "refresh"]);
+  const raw = envValue(env, ["REFRESH_MINUTES", "refreshMinutes", "REFRESH", "refresh"]);
   const value = Number(raw || DEFAULT_REFRESH_MINUTES);
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_REFRESH_MINUTES;
 }
@@ -103,30 +116,31 @@ function collectAccounts(ctx, max) {
   const shuffledSymbols = shuffleArray(RANDOM_SYMBOL_POOL);
 
   for (let i = 1; i <= max; i++) {
-    const url = envText(env, [`url${i}`, `URL${i}`]);
+    const url = envText(env, [`URL${i}`, `url${i}`]);
     if (!url) continue;
     accounts.push({
       slot: i,
-      name: envText(env, [`name${i}`, `NAME${i}`]) || `Sub ${i}`,
+      name: envText(env, [`NAME${i}`, `name${i}`]) || `Sub ${i}`,
       url,
-      resetDay: parseResetDay(envText(env, [`reset${i}`, `RESET${i}`])),
-      nodes: parseNodes(envText(env, [`nodes${i}`, `NODES${i}`, `node${i}`, `NODE${i}`])),
-      accent: envText(env, [`accent${i}`, `ACCENT${i}`]) || accents[i - 1] || accents[0],
+      protocol: envText(env, [`PROTOCOL${i}`, `protocol${i}`]),
+      resetDay: parseResetDay(envText(env, [`RESET${i}`, `reset${i}`])),
+      nodes: envText(env, [`NODES${i}`, `nodes${i}`, `NODE${i}`, `node${i}`]),
+      accent: envText(env, [`ACCENT${i}`, `accent${i}`]) || accents[i - 1] || accents[0],
       symbol: shuffledSymbols[i - 1] || "sf-symbol:network",
     });
   }
 
   const aliases = [
-    ["Sub 1", "SUB1_URL", accents[0], "SUB1_NODES"],
-    ["Sub 2", "SUB2_URL", accents[1], "SUB2_NODES"],
-    ["Sub 3", "SUB3_URL", accents[2], "SUB3_NODES"],
-    ["Sub 4", "SUB4_URL", accents[3], "SUB4_NODES"],
-    ["Sub 5", "SUB5_URL", accents[4], "SUB5_NODES"],
+    ["Sub 1", "SUB1_URL", "SUB1_PROTOCOL", accents[0], "SUB1_NODES"],
+    ["Sub 2", "SUB2_URL", "SUB2_PROTOCOL", accents[1], "SUB2_NODES"],
+    ["Sub 3", "SUB3_URL", "SUB3_PROTOCOL", accents[2], "SUB3_NODES"],
+    ["Sub 4", "SUB4_URL", "SUB4_PROTOCOL", accents[3], "SUB4_NODES"],
+    ["Sub 5", "SUB5_URL", "SUB5_PROTOCOL", accents[4], "SUB5_NODES"],
   ];
 
   const usedSlots = new Set(accounts.map((item) => item.slot));
   for (let idx = 0; idx < aliases.length; idx++) {
-    const [name, key, accent, aliasNodeKey] = aliases[idx];
+    const [name, key, protoKey, accent, aliasNodeKey] = aliases[idx];
     const url = envText(env, [key]);
     if (!url || accounts.some((item) => item.url === url)) continue;
     let nextSlot = 1;
@@ -136,14 +150,15 @@ function collectAccounts(ctx, max) {
       slot: nextSlot,
       name,
       url,
+      protocol: envText(env, [protoKey, `PROTOCOL${nextSlot}`, `protocol${nextSlot}`]),
       resetDay: null,
-      nodes: parseNodes(envText(env, [aliasNodeKey, `nodes${nextSlot}`, `NODES${nextSlot}`, `node${nextSlot}`, `NODE${nextSlot}`])),
+      nodes: envText(env, [aliasNodeKey, `NODES${nextSlot}`, `nodes${nextSlot}`, `NODE${nextSlot}`, `node${nextSlot}`]),
       accent,
       symbol: shuffledSymbols[nextSlot - 1] || "sf-symbol:network"
     });
   }
 
-  const show = envText(env, ["show", "SHOW"]);
+  const show = envText(env, ["SHOW", "show"]);
   if (show) {
     const picked = show
       .split(",")
@@ -157,10 +172,77 @@ function collectAccounts(ctx, max) {
   return accounts.slice(0, max);
 }
 
-function parseNodes(value) {
-  const str = String(value == null ? "" : value).trim();
-  if (!str) return "";
-  return str.endsWith("节点") ? str : `${str}节点`;
+// 两个都填时使用的最短缩写
+function shortestProtocol(val) {
+  if (!val) return "";
+  const v = String(val).trim();
+  const lower = v.toLowerCase();
+  const map = {
+    shadowsocks: "ss",
+    "shadowsocks-2022": "ss",
+    ss2022: "ss",
+    ss: "ss",
+    shadowsocksr: "ssr",
+    ssr: "ssr",
+    vless: "vl",
+    vl: "vl",
+    vmess: "vm",
+    vm: "vm",
+    trojan: "tr",
+    tr: "tr",
+    hysteria2: "hy2",
+    "hysteria 2": "hy2",
+    hy2: "hy2",
+    hysteria: "hy",
+    hy: "hy",
+    wireguard: "wg",
+    wg: "wg",
+    tuic: "tuic",
+    tuic5: "tuic",
+    naiveproxy: "naive",
+    naive: "naive",
+    snell: "snell",
+  };
+  return map[lower] || v;
+}
+
+// 仅填协议时使用：超长协议转缩写，普通长度保留完整名称
+function smartProtocol(val) {
+  if (!val) return "";
+  const v = String(val).trim();
+  const lower = v.toLowerCase();
+  const longMap = {
+    shadowsocks: "SS",
+    "shadowsocks-2022": "SS-2022",
+    ss2022: "SS-2022",
+    shadowsocksr: "SSR",
+    wireguard: "WG",
+    naiveproxy: "Naive",
+    hysteria2: "Hy2",
+    "hysteria 2": "Hy2",
+  };
+  if (longMap[lower]) return longMap[lower];
+  if (v.length > 8 && shortestProtocol(v) !== v) {
+    return shortestProtocol(v).toUpperCase();
+  }
+  return v;
+}
+
+function formatPrefix(protocol, nodes) {
+  const rawP = String(protocol || "").trim();
+  const rawN = String(nodes || "").trim();
+  const pureN = rawN.replace(/节点$/, "");
+
+  if (rawP && pureN) {
+    return `${shortestProtocol(rawP)} ${pureN}`;
+  }
+  if (rawP) {
+    return smartProtocol(rawP);
+  }
+  if (pureN) {
+    return `${pureN}节点`;
+  }
+  return "";
 }
 
 function envText(env, keys) {
@@ -189,6 +271,7 @@ function findAccount(list, key) {
 async function loadTraffic(ctx, account) {
   const empty = {
     ...account,
+    protocol: account.protocol || "",
     nodes: account.nodes || "",
     upload: 0,
     download: 0,
@@ -234,6 +317,7 @@ async function loadTraffic(ctx, account) {
         ...empty,
         ...cached,
         name: account.name || cached.name,
+        protocol: account.protocol || cached.protocol || "",
         resetDay: account.resetDay !== null ? account.resetDay : cached.resetDay,
         nodes: account.nodes || cached.nodes || "",
         accent: account.accent || cached.accent,
@@ -259,12 +343,8 @@ async function fetchSubscriptionInfo(ctx, url) {
     { "User-Agent": "mihomo/1.19.3", Accept: "application/x-yaml,text/plain,*/*" },
   ];
 
-  // 全局时限：小组件有执行时间上限，宁可早失败走缓存，也不要被系统掐掉
   const deadline = Date.now() + 20000;
 
-  // UA 在最外层、方法在最内层：
-  //   同一个 UA + 同一个 URL 下，HEAD 不通就立刻用 GET 补，
-  //   不再拿另外两个 UA 对同一个 URL 重复发 HEAD。
   for (const headers of userAgents) {
     for (const target of variants) {
       for (const method of ["head", "get"]) {
@@ -447,6 +527,9 @@ function renderTrafficSection(data, palette, options = {}) {
         ? "缓存"
         : statusText(data);
 
+  const prefix = formatPrefix(data.protocol, data.nodes);
+  const leftMeta = `${prefix ? prefix + "丨" : ""}今日${formatBytes(data.todayUsed)} 剩余${formatBytes(data.remain)}`;
+
   return {
     type: "stack",
     direction: "column",
@@ -501,7 +584,7 @@ function renderTrafficSection(data, palette, options = {}) {
         children: [
           {
             type: "text",
-            text: `${data.nodes ? data.nodes + "丨" : ""}今日${formatBytes(data.todayUsed)} 剩余${formatBytes(data.remain)}`,
+            text: leftMeta,
             font: { size: profile.metaSize, weight: "medium", family: "Menlo" },
             textColor: accent,
             maxLines: 1,
@@ -690,7 +773,7 @@ function renderEmpty(family, refreshAfter) {
       { type: "spacer" },
       {
         type: "text",
-        text: "Configure url1 in Env",
+        text: "Configure URL1 in Env",
         font: { size: 12, weight: "medium" },
         textColor: palette.warning,
         textAlign: "center",
@@ -777,6 +860,7 @@ function storageKey(account, type) {
 function cacheShape(data) {
   return {
     name: data.name,
+    protocol: data.protocol,
     resetDay: data.resetDay,
     nodes: data.nodes,
     accent: data.accent,
@@ -852,7 +936,6 @@ function expireDaysText(data) {
   let resetDay = null;
   let expire = null;
 
-  // 显式传入的 resetDay 优先，便于用户手动指定每月重置日
   if (typeof data === "number" || typeof data === "string") {
     expire = Number(data);
   } else if (typeof data === "object") {
@@ -860,7 +943,6 @@ function expireDaysText(data) {
     expire = data.expire || null;
   }
 
-  // 1. 有到期时间戳时，优先判断距离最终到期的剩余天数
   if (expire) {
     const expireMs = expire > 1e12 ? expire : expire * 1000;
     const diffMs = expireMs - Date.now();
@@ -876,7 +958,6 @@ function expireDaysText(data) {
     }
   }
 
-  // 2. 未手动配置 resetDay 且到期时间大于 30 天时，取到期日期的「几号」作为每月重置日
   if (!resetDay && expire) {
     const d = new Date(expire > 1e12 ? expire : expire * 1000);
     if (!isNaN(d.getTime())) {
@@ -884,7 +965,6 @@ function expireDaysText(data) {
     }
   }
 
-  // 3. 计算每月重置倒计时（已过重置日则顺延至下月）
   if (resetDay && resetDay >= 1 && resetDay <= 31) {
     const now = new Date();
     const year = now.getFullYear();
