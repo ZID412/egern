@@ -6,10 +6,10 @@
 
 //【选填项 - 基础信息】
 // NAME1 ~ NAME5：订阅名称（不填默认显示 Sub 1、Sub 2...）
-// PROTOCOL1 ~ PROTOCOL5：协议备注（如 SS / Trojan / VLESS / Hy2，超长自动缩写）
-// NODES1 ~ NODES5：节点数量（只填纯数字如 20）
+// PROTOCOL1 ~ PROTOCOL5：协议备注（超长自动缩写：如 SS / Hy2）
+// NODES1 ~ NODES5：节点数量备注（只填纯数字如 20）
 // RESET1 ~ RESET5：每月重置日（1~31，不填写脚本自动推算，但自动推算可能不准确）
-// ACCENT1 ~ ACCENT5：专属主题色（脚本自动显示，可自定义如 #46D66B、#58A6FF 等 HEX 颜色代码）
+// ACCENT1 ~ ACCENT5：专属主题色（脚本自动显示，可自定义如#46D66B、#58A6FF等HEX颜色代码）
 
 //【选填项 - 全局设置】
 // REFRESH_MINUTES：小组件刷新间隔（单位：分钟，默认 60）
