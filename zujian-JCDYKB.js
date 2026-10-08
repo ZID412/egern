@@ -1,5 +1,5 @@
-// ZID412 - Egern通用脚本小组件 - 机场订阅看板 (渐变液态玻璃版)
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
+// ZID412 - Egern通用脚本小组件 - 机场订阅看板
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
 
 // 环境变量配置说明
 //【必填项】URL1 ~ URL5：订阅链接（至少配置 URL1）
@@ -446,7 +446,7 @@ function renderWidget(family, results, refreshAfter) {
     return {
       type: "widget",
       backgroundGradient: palette.backgroundGradient,
-      padding: [13, 14, 12, 14],
+      padding: [12, 14, 11, 14],
       refreshAfter,
       children: [
         renderHeader([item], palette, { small: true }),
@@ -459,12 +459,12 @@ function renderWidget(family, results, refreshAfter) {
   }
 
   const padding = compact
-    ? [11, 14, 11, 14]
+    ? [10, 13, 10, 13]
     : isFive
-      ? [10, 14, 10, 14]
-      : [13, 16, 13, 16];
+      ? [9, 13, 8, 13]
+      : [12, 15, 11, 15];
 
-  const gap = compact ? 5 : isFive ? 3.5 : dense ? 4.5 : 6;
+  const gap = isFive ? 2.5 : compact ? 4.5 : dense ? 3.5 : 5;
 
   return {
     type: "widget",
@@ -472,26 +472,21 @@ function renderWidget(family, results, refreshAfter) {
     padding,
     refreshAfter,
     children: [
-      renderHeader(results, palette, { compact, dense }),
-      spacer(compact ? 6 : isFive ? 4 : 6),
-      ...interleaveCards(results, palette, { compact, dense, count: results.length, gap }),
+      renderHeader(results, palette, { compact, dense, isFive }),
+      spacer(isFive ? 3 : compact ? 5 : 5),
+      {
+        type: "stack",
+        direction: "column",
+        gap,
+        children: results.map((item, index) =>
+          renderTrafficCard(item, palette, { compact, dense, isFive, index, count: results.length })
+        ),
+      },
       ...(family === "systemLarge" || family === "systemExtraLarge"
         ? [{ type: "spacer" }, renderFooter(results, palette)]
         : []),
     ],
   };
-}
-
-function interleaveCards(results, palette, options) {
-  const out = [];
-  const gap = options.gap || 5;
-  results.forEach((item, index) => {
-    out.push(renderTrafficCard(item, palette, { ...options, index, count: results.length }));
-    if (index < results.length - 1) {
-      out.push(spacer(gap));
-    }
-  });
-  return out;
 }
 
 function renderHeader(results, palette, options = {}) {
@@ -505,14 +500,14 @@ function renderHeader(results, palette, options = {}) {
       {
         type: "image",
         src: "sf-symbol:server.rack",
-        width: options.compact ? 13 : 15,
-        height: options.compact ? 13 : 15,
+        width: options.compact ? 13 : 14.5,
+        height: options.compact ? 13 : 14.5,
         color: palette.accent,
       },
       {
         type: "text",
         text: title,
-        font: { size: options.compact ? 15 : 17, weight: "semibold" },
+        font: { size: options.compact ? 15 : 16.5, weight: "semibold" },
         textColor: palette.text,
         maxLines: 1,
       },
@@ -535,16 +530,16 @@ function renderTrafficCard(item, palette, options = {}) {
   const isFive = options.count >= 5;
 
   const cardPadding = isSmall
-    ? [8, 10]
+    ? [7, 10]
     : isCompact
       ? [5, 10]
       : isFive
-        ? [4, 9]
+        ? [3.5, 9]
         : isDense
-          ? [5, 10]
-          : [7, 12];
+          ? [4.5, 10]
+          : [6, 12];
 
-  const borderRadius = isSmall || isFive ? 13 : 15;
+  const borderRadius = isFive ? 11 : isSmall ? 13 : 14;
 
   return {
     type: "stack",
@@ -581,7 +576,7 @@ function renderTrafficSection(data, palette, options = {}) {
   return {
     type: "stack",
     direction: "column",
-    gap: 0,
+    gap: profile.rowGap != null ? profile.rowGap : 2,
     children: [
       {
         type: "stack",
@@ -622,9 +617,7 @@ function renderTrafficSection(data, palette, options = {}) {
           },
         ],
       },
-      spacer(profile.gapAfterHead),
       renderProgress(ratio(data.remain, data.total), accent, palette, profile.progressHeight),
-      spacer(profile.gapAfterProgress),
       {
         type: "stack",
         direction: "row",
@@ -662,8 +655,7 @@ function sectionProfile(options) {
       valueSize: 10,
       metaSize: 9.5,
       progressHeight: 5,
-      gapAfterHead: 5,
-      gapAfterProgress: 5,
+      rowGap: 3.5,
     };
   }
 
@@ -675,45 +667,41 @@ function sectionProfile(options) {
       valueSize: 10,
       metaSize: 9,
       progressHeight: 3.5,
-      gapAfterHead: 3,
-      gapAfterProgress: 3,
+      rowGap: 2.5,
     };
   }
 
   if (options.dense) {
     if (options.count >= 5) {
       return {
-        icon: 13.5,
-        nameSize: 14,
-        percentSize: 14,
-        valueSize: 9.5,
-        metaSize: 8.5,
-        progressHeight: 3,
-        gapAfterHead: 2,
-        gapAfterProgress: 2,
+        icon: 13,
+        nameSize: 13.5,
+        percentSize: 13.5,
+        valueSize: 9,
+        metaSize: 8,
+        progressHeight: 2.5,
+        rowGap: 1.5,
       };
     }
     return {
-      icon: 14.5,
-      nameSize: 15,
-      percentSize: 15,
-      valueSize: 10,
-      metaSize: 9,
-      progressHeight: 3.5,
-      gapAfterHead: 3,
-      gapAfterProgress: 3,
+      icon: 14,
+      nameSize: 14.5,
+      percentSize: 14.5,
+      valueSize: 9.5,
+      metaSize: 8.5,
+      progressHeight: 3,
+      rowGap: 2,
     };
   }
 
   return {
-    icon: 16,
-    nameSize: 16,
-    percentSize: 16,
-    valueSize: 11,
-    metaSize: 9.5,
-    progressHeight: 4.5,
-    gapAfterHead: 5,
-    gapAfterProgress: 5,
+    icon: 15.5,
+    nameSize: 15.5,
+    percentSize: 15.5,
+    valueSize: 10.5,
+    metaSize: 9,
+    progressHeight: 4,
+    rowGap: 3,
   };
 }
 
