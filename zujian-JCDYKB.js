@@ -461,10 +461,10 @@ function renderWidget(family, results, refreshAfter) {
   const padding = compact
     ? [11, 14, 11, 14]
     : isFive
-      ? [10, 14, 10, 14]
+      ? [8, 14, 8, 14]
       : [13, 16, 13, 16];
 
-  const gap = compact ? 5 : isFive ? 3.5 : dense ? 4.5 : 6;
+  const gap = compact ? 5 : isFive ? 3 : dense ? 4.5 : 6;
 
   return {
     type: "widget",
@@ -473,7 +473,7 @@ function renderWidget(family, results, refreshAfter) {
     refreshAfter,
     children: [
       renderHeader(results, palette, { compact, dense }),
-      spacer(compact ? 6 : isFive ? 4 : 6),
+      spacer(compact ? 6 : isFive ? 3 : 6),
       ...interleaveCards(results, palette, { compact, dense, count: results.length, gap }),
       ...(family === "systemLarge" || family === "systemExtraLarge"
         ? [{ type: "spacer" }, renderFooter(results, palette)]
@@ -539,7 +539,7 @@ function renderTrafficCard(item, palette, options = {}) {
     : isCompact
       ? [5, 10]
       : isFive
-        ? [4, 9]
+        ? [3.5, 9]
         : isDense
           ? [5, 10]
           : [7, 12];
@@ -683,11 +683,11 @@ function sectionProfile(options) {
   if (options.dense) {
     if (options.count >= 5) {
       return {
-        icon: 13.5,
-        nameSize: 14,
-        percentSize: 14,
-        valueSize: 9.5,
-        metaSize: 8.5,
+        icon: 14.5,
+        nameSize: 15,
+        percentSize: 15,
+        valueSize: 10,
+        metaSize: 9.2,
         progressHeight: 3,
         gapAfterHead: 2,
         gapAfterProgress: 2,
