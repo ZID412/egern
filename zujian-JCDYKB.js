@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
 
 // 环境变量:（无效换成大写）
 // url1/name1/reset1/nodes1
@@ -10,7 +10,6 @@
 // url=订阅链接，name=订阅名称，reset=每月重置日（可忽略，脚本自动计算），nodes=自定义节点数（没啥用的功能，可忽略）
 
 // 小尺寸展示 1 行订阅（不推荐），中尺寸展示 2 行订阅，大尺寸最多展示 5 行订阅
-
 
 const DEFAULT_REFRESH_MINUTES = 60;
 const MAX_ACCOUNTS = 5;
@@ -481,18 +480,6 @@ function renderTrafficSection(data, palette, options = {}) {
             textColor: accent,
             maxLines: 1,
           },
-          ...(data.nodes
-            ? [
-                {
-                  type: "text",
-                  text: data.nodes,
-                  font: { size: profile.metaSize, weight: "medium", family: "Menlo" },
-                  textColor: accent,
-                  maxLines: 1,
-                  minScale: 0.7,
-                },
-              ]
-            : []),
           { type: "spacer" },
           {
             type: "text",
@@ -514,7 +501,7 @@ function renderTrafficSection(data, palette, options = {}) {
         children: [
           {
             type: "text",
-            text: `今日${formatBytes(data.todayUsed)} 剩余${formatBytes(data.remain)}`,
+            text: `${data.nodes ? data.nodes + " · " : ""}今日${formatBytes(data.todayUsed)} 剩余${formatBytes(data.remain)}`,
             font: { size: profile.metaSize, weight: "medium", family: "Menlo" },
             textColor: accent,
             maxLines: 1,
