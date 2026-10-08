@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 // 环境变量配置说明
 //【必填项】URL1 ~ URL5：订阅链接（至少配置 URL1）
@@ -9,10 +9,9 @@
 // PROTOCOL1 ~ PROTOCOL5：协议备注（超长自动缩写：如 SS / Hy2）
 // NODES1 ~ NODES5：节点数量备注（只填纯数字如 20）
 // RESET1 ~ RESET5：每月重置日（1~31，不填写脚本自动推算，但自动推算可能不准确）
-// ACCENT1 ~ ACCENT5：专属主题色（脚本自动显示，可自定义如#BF5AF2、#0A84FF等HEX颜色代码）
+// ACCENT1 ~ ACCENT5：专属主题色（脚本自动显示，可自定义如#46D66B、#58A6FF等HEX颜色代码）
 
 //【选填项 - 全局设置】
-// WIDGET_TITLE：小组件标题（默认 Subs Dashboard）
 // REFRESH_MINUTES：小组件刷新间隔（单位：分钟，默认 60）
 // SHOW：筛选并指定排序（如填 1,3,4 或填名字，大组件最多展示 5 个）
 
@@ -22,6 +21,7 @@
 // - 协议 + 节点同填 -> 显示协议缩写「hy2 20节点丨今日...」
 // - 两者都不填 -> 保持整洁，直接显示「今日...」
 
+// 原版地址：https://raw.githubusercontent.com/Harley0214/Egern-widgest-SUBTraffic-monitor/main/ModernSubTraffic-Egern-Generic.js
 // ------------------------------------------
 
 const DEFAULT_REFRESH_MINUTES = 60;
@@ -128,6 +128,7 @@ function collectAccounts(ctx, max) {
       accent: envText(env, [`ACCENT${i}`, `accent${i}`]) || accents[i - 1] || accents[0],
       symbol: shuffledSymbols[i - 1] || "sf-symbol:network",
       widgetTitle: envText(env, ["WIDGET_TITLE", "widgetTitle", "TITLE", "title"]) || "Subs Dashboard",
+      panelStyle: envText(env, ["PANEL_STYLE", "panelStyle", "STYLE", "style"]),
     });
   }
 
@@ -157,6 +158,7 @@ function collectAccounts(ctx, max) {
       accent,
       symbol: shuffledSymbols[nextSlot - 1] || "sf-symbol:network",
       widgetTitle: envText(env, ["WIDGET_TITLE", "widgetTitle", "TITLE", "title"]) || "Subs Dashboard",
+      panelStyle: envText(env, ["PANEL_STYLE", "panelStyle", "STYLE", "style"]),
     });
   }
 
@@ -416,24 +418,6 @@ function withParam(url, key, value) {
   return `${url}${url.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(value)}`;
 }
 
-// ---------------------------------------------------------------------------
-// 视觉：iOS 渐变液态玻璃
-// ---------------------------------------------------------------------------
-
-function bg() {
-  return {
-    type: "linear",
-    colors: [
-      { light: "#F3EEFF", dark: "#1A0F33" },
-      { light: "#EEF4FF", dark: "#0B1530" },
-      { light: "#F2FBF7", dark: "#06120E" },
-    ],
-    stops: [0, 0.55, 1],
-    startPoint: { x: 0, y: 0 },
-    endPoint: { x: 1, y: 1 },
-  };
-}
-
 function renderWidget(family, results, refreshAfter) {
   const compact = family === "systemMedium";
   const small = family === "systemSmall";
@@ -451,7 +435,7 @@ function renderWidget(family, results, refreshAfter) {
       children: [
         renderHeader([item], palette, { small: true }),
         { type: "spacer" },
-        renderTrafficCard(item, palette, { small: true, compact: true, count: 1 }),
+        renderGlassCard([renderTrafficSection(item, palette, { small: true, compact: true, count: 1 })], palette, { small: true }),
         { type: "spacer" },
         renderFooter(results, palette),
       ],
@@ -461,10 +445,11 @@ function renderWidget(family, results, refreshAfter) {
   const padding = compact
     ? [10, 13, 10, 13]
     : isFive
-      ? [9, 13, 8, 13]
+      ? [10, 13, 9, 13]
       : [12, 15, 11, 15];
 
-  const gap = isFive ? 2.5 : compact ? 4.5 : dense ? 3.5 : 5;
+  // 默认使用一体化毛玻璃面板（消除五张卡片堆叠造成的条纹状排版割裂），若配置 PANEL_STYLE=cards 则使用独立卡片
+  const useCards = String(results[0]?.panelStyle || "").toLowerCase() === "cards";
 
   return {
     type: "widget",
@@ -473,20 +458,67 @@ function renderWidget(family, results, refreshAfter) {
     refreshAfter,
     children: [
       renderHeader(results, palette, { compact, dense, isFive }),
-      spacer(isFive ? 3 : compact ? 5 : 5),
-      {
-        type: "stack",
-        direction: "column",
-        gap,
-        children: results.map((item, index) =>
-          renderTrafficCard(item, palette, { compact, dense, isFive, index, count: results.length })
-        ),
-      },
+      spacer(isFive ? 3 : compact ? 4 : 5),
+      useCards
+        ? {
+            type: "stack",
+            direction: "column",
+            gap: isFive ? 2.5 : compact ? 4 : 4.5,
+            children: results.map((item, index) =>
+              renderGlassCard(
+                [renderTrafficSection(item, palette, { compact, dense, isFive, index, count: results.length })],
+                palette,
+                { isFive, compact, dense, isCardItem: true }
+              )
+            ),
+          }
+        : renderGlassCard(
+            interleaveRows(results, palette, { compact, dense, isFive, count: results.length }),
+            palette,
+            { isFive, compact, dense }
+          ),
       ...(family === "systemLarge" || family === "systemExtraLarge"
         ? [{ type: "spacer" }, renderFooter(results, palette)]
         : []),
     ],
   };
+}
+
+function renderGlassCard(children, palette, options = {}) {
+  const isFive = options.isFive;
+  const isCompact = options.compact;
+  const isSmall = options.small;
+  const isCardItem = options.isCardItem;
+
+  const padding = isCardItem
+    ? (isFive ? [3.5, 9] : isCompact ? [5, 10] : [6, 12])
+    : (isFive ? [6, 11] : isCompact ? [7, 11] : isSmall ? [8, 11] : [9, 13]);
+
+  const borderRadius = isCardItem
+    ? (isFive ? 11 : 14)
+    : (isFive ? 14 : 16);
+
+  return {
+    type: "stack",
+    direction: "column",
+    gap: 0,
+    padding,
+    borderRadius,
+    backgroundColor: palette.glass,
+    children,
+  };
+}
+
+function interleaveRows(results, palette, options) {
+  const out = [];
+  const gap = options.isFive ? 2.5 : options.compact ? 3.5 : 4;
+  results.forEach((item, index) => {
+    out.push(renderTrafficSection(item, palette, { ...options, index, count: results.length }));
+    if (index < results.length - 1) {
+      out.push(spacer(gap), divider(palette), spacer(gap));
+    }
+  });
+  return out;
 }
 
 function renderHeader(results, palette, options = {}) {
@@ -523,66 +555,60 @@ function renderHeader(results, palette, options = {}) {
   };
 }
 
-function renderTrafficCard(item, palette, options = {}) {
-  const isSmall = options.small;
-  const isCompact = options.compact;
-  const isDense = options.dense;
-  const isFive = options.count >= 5;
-
-  const cardPadding = isSmall
-    ? [7, 10]
-    : isCompact
-      ? [5, 10]
-      : isFive
-        ? [3.5, 9]
-        : isDense
-          ? [4.5, 10]
-          : [6, 12];
-
-  const borderRadius = isFive ? 11 : isSmall ? 13 : 14;
-
-  return {
-    type: "stack",
-    direction: "column",
-    gap: 0,
-    padding: cardPadding,
-    borderRadius,
-    backgroundColor: palette.glass,
-    children: [
-      renderTrafficSection(item, palette, options),
-    ],
-  };
-}
-
 function renderTrafficSection(data, palette, options = {}) {
   const profile = sectionProfile(options);
   const accent = data.ok ? data.accent || palette.accent : palette.warning;
-  const rightValue = options.small
-    ? formatBytes(data.total)
-    : `⬆️${formatBytes(data.upload)} ⬇️${formatBytes(data.download)}丨${formatBytes(data.total)}`;
 
-  const resetText = expireDaysText(data);
-  const meta = data.expire
-    ? `到期${dateText(data.expire)}${resetText ? ' ' + resetText : ''}`
-    : resetText
-      ? resetText
-      : data.cached
-        ? "缓存"
-        : statusText(data);
+  // 1. 剩余流量与百分比
+  const pctStr = percent(data.remain, data.total);
+  const remainStr = formatBytes(data.remain);
+  const totalStr = formatBytes(data.total);
 
+  // 2. 协议与节点备注
   const prefix = formatPrefix(data.protocol, data.nodes);
-  const leftMeta = `${prefix ? prefix + "丨" : ""}今日${formatBytes(data.todayUsed)} 剩余${formatBytes(data.remain)}`;
+
+  // 3. 底部左侧信息：今日用量 + 汇总/上下行
+  const leftParts = [];
+  if (data.todayUsed != null && data.todayUsed > 0) {
+    leftParts.push(`今日 ${formatBytes(data.todayUsed)}`);
+  } else {
+    leftParts.push("今日 0B");
+  }
+
+  if (options.small) {
+    leftParts.push(`总 ${totalStr}`);
+  } else if (data.upload || data.download) {
+    leftParts.push(`⬆️${formatBytes(data.upload)} ⬇️${formatBytes(data.download)}丨${totalStr}`);
+  } else if (data.total) {
+    leftParts.push(`总量 ${totalStr}`);
+  }
+  const leftMeta = leftParts.join(" · ");
+
+  // 4. 底部右侧信息：到期时间与重置提醒
+  const resetText = expireDaysText(data);
+  let meta = "";
+  if (data.expire) {
+    const expireDate = `到期 ${dateText(data.expire)}`;
+    meta = resetText ? `${expireDate} · ${resetText}` : expireDate;
+  } else if (resetText) {
+    meta = resetText;
+  } else if (data.cached) {
+    meta = "缓存数据";
+  } else {
+    meta = statusText(data);
+  }
 
   return {
     type: "stack",
     direction: "column",
     gap: profile.rowGap != null ? profile.rowGap : 2,
     children: [
+      // 顶行：[图标] 订阅名称 [协议/节点] ...... 剩余流量 百分比
       {
         type: "stack",
         direction: "row",
         alignItems: "center",
-        gap: 6,
+        gap: 5,
         children: [
           {
             type: "image",
@@ -599,25 +625,38 @@ function renderTrafficSection(data, palette, options = {}) {
             maxLines: 1,
             minScale: 0.72,
           },
-          {
-            type: "text",
-            text: percent(data.remain, data.total),
-            font: { size: profile.percentSize, weight: "semibold" },
-            textColor: accent,
-            maxLines: 1,
-          },
+          ...(prefix
+            ? [
+                {
+                  type: "text",
+                  text: prefix,
+                  font: { size: profile.metaSize, weight: "medium" },
+                  textColor: palette.dim,
+                  maxLines: 1,
+                },
+              ]
+            : []),
           { type: "spacer" },
           {
             type: "text",
-            text: rightValue,
-            font: { size: profile.valueSize, weight: "medium", family: "Menlo" },
-            textColor: palette.dim,
+            text: `剩 ${remainStr}`,
+            font: { size: profile.nameSize, weight: "bold", family: "Menlo" },
+            textColor: palette.text,
             maxLines: 1,
-            minScale: 0.72,
+            minScale: 0.75,
+          },
+          {
+            type: "text",
+            text: pctStr,
+            font: { size: profile.percentSize, weight: "bold" },
+            textColor: accent,
+            maxLines: 1,
           },
         ],
       },
+      // 中行：胶囊进度条
       renderProgress(ratio(data.remain, data.total), accent, palette, profile.progressHeight),
+      // 底行：今日用量/上下行 ...... 到期时间/重置天数
       {
         type: "stack",
         direction: "row",
@@ -661,33 +700,33 @@ function sectionProfile(options) {
 
   if (options.compact) {
     return {
-      icon: 14.5,
-      nameSize: 15,
-      percentSize: 15,
-      valueSize: 10,
+      icon: 14,
+      nameSize: 14.5,
+      percentSize: 14.5,
+      valueSize: 9.5,
       metaSize: 9,
       progressHeight: 3.5,
-      rowGap: 2.5,
+      rowGap: 2,
     };
   }
 
   if (options.dense) {
     if (options.count >= 5) {
       return {
-        icon: 13,
-        nameSize: 13.5,
-        percentSize: 13.5,
-        valueSize: 9,
+        icon: 12.5,
+        nameSize: 13,
+        percentSize: 13,
+        valueSize: 8.5,
         metaSize: 8,
         progressHeight: 2.5,
         rowGap: 1.5,
       };
     }
     return {
-      icon: 14,
-      nameSize: 14.5,
-      percentSize: 14.5,
-      valueSize: 9.5,
+      icon: 13.5,
+      nameSize: 14,
+      percentSize: 14,
+      valueSize: 9,
       metaSize: 8.5,
       progressHeight: 3,
       rowGap: 2,
@@ -695,13 +734,13 @@ function sectionProfile(options) {
   }
 
   return {
-    icon: 15.5,
-    nameSize: 15.5,
-    percentSize: 15.5,
-    valueSize: 10.5,
+    icon: 15,
+    nameSize: 15,
+    percentSize: 15,
+    valueSize: 10,
     metaSize: 9,
     progressHeight: 4,
-    rowGap: 3,
+    rowGap: 2.5,
   };
 }
 
@@ -742,14 +781,14 @@ function renderFooter(results, palette) {
       {
         type: "text",
         text: `${results.length} Subscription${results.length > 1 ? "s" : ""}`,
-        font: { size: 11, weight: "semibold" },
+        font: { size: 12, weight: "semibold" },
         textColor: palette.dim,
       },
       { type: "spacer" },
       {
         type: "text",
         text: `Used ${formatBytes(total.used)}丨${formatBytes(total.total)}`,
-        font: { size: 11, weight: "medium", family: "Menlo" },
+        font: { size: 12, weight: "medium", family: "Menlo" },
         textColor: palette.dim,
         maxLines: 1,
         minScale: 0.72,
@@ -837,6 +876,20 @@ function renderEmpty(family, refreshAfter) {
   };
 }
 
+function bg() {
+  return {
+    type: "linear",
+    colors: [
+      { light: "#F3EEFF", dark: "#1A0F33" },
+      { light: "#EEF4FF", dark: "#0B1530" },
+      { light: "#F2FBF7", dark: "#06120E" },
+    ],
+    stops: [0, 0.55, 1],
+    startPoint: { x: 0, y: 0 },
+    endPoint: { x: 1, y: 1 },
+  };
+}
+
 function makePalette(accent) {
   const accentColor = accent || "#BF5AF2";
   return {
@@ -844,7 +897,7 @@ function makePalette(accent) {
     text: { light: "#000000", dark: "#FFFFFF" },
     dim: { light: "#3C3C4399", dark: "#EBEBF599" },
     glass: { light: "#FFFFFFA6", dark: "#FFFFFF1A" },
-    divider: { light: "#00000010", dark: "#FFFFFF15" },
+    divider: { light: "#0000000F", dark: "#FFFFFF18" },
     track: { light: "#00000010", dark: "#FFFFFF20" },
     warning: { light: "#FF3B30", dark: "#FF453A" },
     backgroundGradient: bg(),
