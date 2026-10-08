@@ -1,13 +1,13 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 // 环境变量:
-// url1/name1/reset1
-// url2/name2/reset2
-// url3/name3/reset3
-// url4/name4/reset4
-// url5/name5/reset5
-// url=订阅链接，name=订阅名称，reset=每月重置日（可忽略，脚本自动计算）
+// url1/name1/reset1/nodes1
+// url2/name2/reset2/nodes2
+// url3/name3/reset3/nodes3
+// url4/name4/reset4/nodes4
+// url5/name5/reset5/nodes5
+// url=订阅链接，name=订阅名称，reset=每月重置日（可忽略，脚本自动计算），nodes=自定义节点数（没啥用的功能，可忽略）
 
 // 小尺寸展示 1 行订阅（不推荐），中尺寸展示 2 行订阅，大尺寸最多展示 5 行订阅
 
@@ -110,22 +110,23 @@ function collectAccounts(ctx, max) {
       name: envText(env, [`name${i}`, `NAME${i}`]) || `Sub ${i}`,
       url,
       resetDay: parseResetDay(envText(env, [`reset${i}`, `RESET${i}`])),
+      nodes: parseNodes(envText(env, [`nodes${i}`, `NODES${i}`, `node${i}`, `NODE${i}`])),
       accent: envText(env, [`accent${i}`, `ACCENT${i}`]) || accents[i - 1] || accents[0],
       symbol: shuffledSymbols[i - 1] || "sf-symbol:network",
     });
   }
 
   const aliases = [
-    ["Sub 1", "SUB1_URL", accents[0]],
-    ["Sub 2", "SUB2_URL", accents[1]],
-    ["Sub 3", "SUB3_URL", accents[2]],
-    ["Sub 4", "SUB4_URL", accents[3]],
-    ["Sub 5", "SUB5_URL", accents[4]],
+    ["Sub 1", "SUB1_URL", accents[0], "SUB1_NODES"],
+    ["Sub 2", "SUB2_URL", accents[1], "SUB2_NODES"],
+    ["Sub 3", "SUB3_URL", accents[2], "SUB3_NODES"],
+    ["Sub 4", "SUB4_URL", accents[3], "SUB4_NODES"],
+    ["Sub 5", "SUB5_URL", accents[4], "SUB5_NODES"],
   ];
 
   const usedSlots = new Set(accounts.map((item) => item.slot));
   for (let idx = 0; idx < aliases.length; idx++) {
-    const [name, key, accent] = aliases[idx];
+    const [name, key, accent, aliasNodeKey] = aliases[idx];
     const url = envText(env, [key]);
     if (!url || accounts.some((item) => item.url === url)) continue;
     let nextSlot = 1;
@@ -136,6 +137,7 @@ function collectAccounts(ctx, max) {
       name,
       url,
       resetDay: null,
+      nodes: parseNodes(envText(env, [aliasNodeKey, `nodes${nextSlot}`, `NODES${nextSlot}`, `node${nextSlot}`, `NODE${nextSlot}`])),
       accent,
       symbol: shuffledSymbols[nextSlot - 1] || "sf-symbol:network"
     });
@@ -153,6 +155,12 @@ function collectAccounts(ctx, max) {
   }
 
   return accounts.slice(0, max);
+}
+
+function parseNodes(value) {
+  const str = String(value == null ? "" : value).trim();
+  if (!str) return "";
+  return str.endsWith("节点") ? str : `${str}节点`;
 }
 
 function envText(env, keys) {
@@ -181,6 +189,7 @@ function findAccount(list, key) {
 async function loadTraffic(ctx, account) {
   const empty = {
     ...account,
+    nodes: account.nodes || "",
     upload: 0,
     download: 0,
     used: 0,
@@ -226,6 +235,7 @@ async function loadTraffic(ctx, account) {
         ...cached,
         name: account.name || cached.name,
         resetDay: account.resetDay !== null ? account.resetDay : cached.resetDay,
+        nodes: account.nodes || cached.nodes || "",
         accent: account.accent || cached.accent,
         symbol: account.symbol || cached.symbol,
         cached: true,
@@ -482,7 +492,7 @@ function renderTrafficSection(data, palette, options = {}) {
         ],
       },
       spacer(profile.gapAfterHead),
-      renderProgress(ratio(data.remain, data.total), accent, palette, profile.progressHeight),
+      renderProgress(ratio(data.remain, data.total), accent, palette, profile.progressHeight, data.nodes, profile),
       spacer(profile.gapAfterProgress),
       {
         type: "stack",
@@ -520,6 +530,7 @@ function sectionProfile(options) {
       percentSize: 17,
       valueSize: 10,
       metaSize: 10,
+      nodeSize: 10,
       progressHeight: 6,
       gapAfterHead: 6,
       gapAfterProgress: 5,
@@ -533,6 +544,7 @@ function sectionProfile(options) {
       percentSize: 16,
       valueSize: 11,
       metaSize: 10,
+      nodeSize: 10,
       progressHeight: 4,
       gapAfterHead: 4,
       gapAfterProgress: 4,
@@ -547,6 +559,7 @@ function sectionProfile(options) {
         percentSize: 16,
         valueSize: 11,
         metaSize: 10,
+        nodeSize: 10,
         progressHeight: 4,
         gapAfterHead: 2,
         gapAfterProgress: 2,
@@ -558,6 +571,7 @@ function sectionProfile(options) {
       percentSize: 16,
       valueSize: 11,
       metaSize: 10,
+      nodeSize: 10,
       progressHeight: 5,
       gapAfterHead: 5,
       gapAfterProgress: 5,
@@ -570,27 +584,48 @@ function sectionProfile(options) {
     percentSize: 18,
     valueSize: 12,
     metaSize: 11,
+    nodeSize: 11,
     progressHeight: 5,
     gapAfterHead: 6,
     gapAfterProgress: 6,
   };
 }
 
-// 进度条：父 stack 固定高度，两个子 stack 用 flex 按比例分配宽度
-function renderProgress(value, accent, palette, height) {
+// 进度条：父 stack 固定高度，两个子 stack 用 flex 按比例分配宽度；若配置了节点数，在右侧自适应显示
+function renderProgress(value, accent, palette, height, nodes, profile = {}) {
   const safe = Math.min(Math.max(value, 0), 1);
   // 已满/近乎为空时保留极小的一段，避免整条消失
   const filled = safe >= 1 ? 100 : Math.max(Math.round(safe * 1000) / 10, 1);
   const empty = 100 - filled;
 
-  return {
+  const bar = {
     type: "stack",
     direction: "row",
     alignItems: "center",
+    flex: nodes ? 1 : undefined,
     gap: 0,
     children: [
       { type: "stack", flex: filled, height, backgroundColor: accent, borderRadius: 99, children: [] },
       { type: "stack", flex: empty, height, backgroundColor: palette.track, borderRadius: 99, children: [] },
+    ],
+  };
+
+  if (!nodes) return bar;
+
+  return {
+    type: "stack",
+    direction: "row",
+    alignItems: "center",
+    gap: 7,
+    children: [
+      bar,
+      {
+        type: "text",
+        text: nodes,
+        font: { size: profile.nodeSize || 10, weight: "medium" },
+        textColor: palette.dim,
+        maxLines: 1,
+      },
     ],
   };
 }
@@ -768,6 +803,7 @@ function cacheShape(data) {
   return {
     name: data.name,
     resetDay: data.resetDay,
+    nodes: data.nodes,
     accent: data.accent,
     symbol: data.symbol,
     upload: data.upload,
