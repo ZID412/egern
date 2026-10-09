@@ -21,7 +21,7 @@
 // - 协议 + 节点同填 -> 显示协议缩写「hy2 20节点丨今日...」
 // - 两者都不填 -> 保持整洁，直接显示「今日...」
 
-// 推荐用中大尺寸组件🥺，小组件没做优化
+// 推荐用中大尺寸组件🥺，小尺寸组件没做优化
 // 已知小bug：需要每日0:00手动刷新
 // 原版地址：https://raw.githubusercontent.com/Harley0214/Egern-widgest-SUBTraffic-monitor/main/ModernSubTraffic-Egern-Generic.js
 // ------------------------------------------
