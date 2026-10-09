@@ -514,9 +514,49 @@ function renderHeader(results, palette, options = {}) {
 function renderTrafficSection(data, palette, options = {}) {
   const profile = sectionProfile(options);
   const accent = data.ok ? data.accent || palette.accent : palette.warning;
-  const rightValue = options.small
-    ? formatBytes(data.total)
-    : `⬆️${formatBytes(data.upload)} ⬇️${formatBytes(data.download)}丨${formatBytes(data.total)}`;
+  const rightChildren = options.small
+    ? [
+        {
+          type: "text",
+          text: formatBytes(data.total),
+          font: { size: profile.valueSize, weight: "medium", family: "Menlo" },
+          textColor: accent,
+          maxLines: 1,
+          minScale: 0.72,
+        },
+      ]
+    : [
+        {
+          type: "image",
+          src: "sf-symbol:icloud.and.arrow.up",
+          width: profile.valueSize,
+          height: profile.valueSize,
+          color: accent,
+        },
+        {
+          type: "text",
+          text: formatBytes(data.upload),
+          font: { size: profile.valueSize, weight: "medium", family: "Menlo" },
+          textColor: accent,
+          maxLines: 1,
+          minScale: 0.72,
+        },
+        {
+          type: "image",
+          src: "sf-symbol:icloud.and.arrow.down",
+          width: profile.valueSize,
+          height: profile.valueSize,
+          color: accent,
+        },
+        {
+          type: "text",
+          text: `${formatBytes(data.download)}丨${formatBytes(data.total)}`,
+          font: { size: profile.valueSize, weight: "medium", family: "Menlo" },
+          textColor: accent,
+          maxLines: 1,
+          minScale: 0.72,
+        },
+      ];
 
   const resetText = expireDaysText(data);
   const meta = data.expire
@@ -565,12 +605,11 @@ function renderTrafficSection(data, palette, options = {}) {
           },
           { type: "spacer" },
           {
-            type: "text",
-            text: rightValue,
-            font: { size: profile.valueSize, weight: "medium", family: "Menlo" },
-            textColor: accent,
-            maxLines: 1,
-            minScale: 0.72,
+            type: "stack",
+            direction: "row",
+            alignItems: "center",
+            gap: 2,
+            children: rightChildren,
           },
         ],
       },
@@ -746,7 +785,19 @@ function renderAccessoryRectangular(results, refreshAfter) {
           { type: "text", text: item.name || "Traffic", font: { size: 17, weight: "bold" }, maxLines: 1 },
         ],
       },
-      { type: "text", text: `${percent(item.remain, item.total)}  ⬆️${formatBytes(item.upload)} ⬇️${formatBytes(item.download)}丨${formatBytes(item.total)}`, font: { size: 11, family: "Menlo" }, maxLines: 1, minScale: 0.7 },
+      {
+        type: "stack",
+        direction: "row",
+        alignItems: "center",
+        gap: 2,
+        children: [
+          { type: "text", text: `${percent(item.remain, item.total)} `, font: { size: 11, family: "Menlo" } },
+          { type: "image", src: "sf-symbol:icloud.and.arrow.up", width: 10, height: 10 },
+          { type: "text", text: formatBytes(item.upload), font: { size: 11, family: "Menlo" } },
+          { type: "image", src: "sf-symbol:icloud.and.arrow.down", width: 10, height: 10 },
+          { type: "text", text: `${formatBytes(item.download)}丨${formatBytes(item.total)}`, font: { size: 11, family: "Menlo" } },
+        ],
+      },
       { type: "text", text: `今日 ${formatBytes(item.todayUsed)} 剩余 ${formatBytes(item.remain)}  ${expireText}`, font: { size: 11, family: "Menlo" }, opacity: 0.7, maxLines: 1, minScale: 0.7 },
     ],
   };
