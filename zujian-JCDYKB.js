@@ -29,15 +29,15 @@ const MAX_ACCOUNTS = 5;
 
 // 1. 定义可供随机抽取的 SF Symbols 图标池
 const RANDOM_SYMBOL_POOL = [
-  "sf-symbol:point.3.connected.trianglepath.dotted",
-  "sf-symbol:network",
-  "sf-symbol:globe",
-  "sf-symbol:bolt.horizontal.circle.fill",
-  "sf-symbol:antenna.radiowaves.left.and.right",
-  "sf-symbol:cpu",
-  "sf-symbol:externaldrive.connected.to.line.below",
-  "sf-symbol:icloud",
-  "sf-symbol:wifi"
+  "sf-symbol:cloud.drizzle",
+  "sf-symbol:cloud.rain",
+  "sf-symbol:cloud.heavyrain",
+  "sf-symbol:cloud.fog",
+  "sf-symbol:cloud.hail",
+  "sf-symbol:cloud.snow",
+  "sf-symbol:cloud.sleet",
+  "sf-symbol:cloud.bolt",
+  "sf-symbol:cloud.bolt.rain"
 ];
 
 // 2. Fisher-Yates 洗牌算法：用于随机打乱数组且保证不重复
@@ -487,7 +487,7 @@ function renderHeader(results, palette, options = {}) {
     children: [
       {
         type: "image",
-        src: "sf-symbol:server.rack",
+        src: "sf-symbol:cloud",
         width: options.compact ? 13 : 15,
         height: options.compact ? 13 : 15,
         color: palette.accent,
