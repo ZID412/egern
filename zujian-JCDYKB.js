@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 // 环境变量配置说明
 //【必填项】URL1 ~ URL5：订阅链接（至少配置 URL1）
@@ -126,7 +126,7 @@ function collectAccounts(ctx, max) {
       resetDay: parseResetDay(envText(env, [`RESET${i}`, `reset${i}`])),
       nodes: envText(env, [`NODES${i}`, `nodes${i}`, `NODE${i}`, `node${i}`]),
       accent: envText(env, [`ACCENT${i}`, `accent${i}`]) || accents[i - 1] || accents[0],
-      symbol: shuffledSymbols[i - 1] || "sf-symbol:network",
+      symbol: shuffledSymbols[i - 1] || "sf-symbol:cloud",
     });
   }
 
@@ -154,7 +154,7 @@ function collectAccounts(ctx, max) {
       resetDay: null,
       nodes: envText(env, [aliasNodeKey, `NODES${nextSlot}`, `nodes${nextSlot}`, `NODE${nextSlot}`, `node${nextSlot}`]),
       accent,
-      symbol: shuffledSymbols[nextSlot - 1] || "sf-symbol:network"
+      symbol: shuffledSymbols[nextSlot - 1] || "sf-symbol:cloud"
     });
   }
 
@@ -583,7 +583,7 @@ function renderTrafficSection(data, palette, options = {}) {
         children: [
           {
             type: "image",
-            src: data.symbol || "sf-symbol:network",
+            src: data.symbol || "sf-symbol:cloud",
             width: profile.icon,
             height: profile.icon,
             color: accent,
@@ -781,7 +781,7 @@ function renderAccessoryRectangular(results, refreshAfter) {
         alignItems: "center",
         gap: 4,
         children: [
-          { type: "image", src: item.symbol || "sf-symbol:network", width: 11, height: 11 },
+          { type: "image", src: item.symbol || "sf-symbol:cloud", width: 11, height: 11 },
           { type: "text", text: item.name || "Traffic", font: { size: 17, weight: "bold" }, maxLines: 1 },
         ],
       },
