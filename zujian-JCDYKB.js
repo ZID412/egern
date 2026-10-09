@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
 
 // 环境变量配置说明
 //【必填项】URL1 ~ URL5：订阅链接（至少配置 URL1）
@@ -528,7 +528,7 @@ function renderTrafficSection(data, palette, options = {}) {
     : [
         {
           type: "image",
-          src: "sf-symbol:icloud.and.arrow.up",
+          src: "sf-symbol:arrow.up.to.line",
           width: profile.valueSize,
           height: profile.valueSize,
           color: accent,
@@ -543,7 +543,7 @@ function renderTrafficSection(data, palette, options = {}) {
         },
         {
           type: "image",
-          src: "sf-symbol:icloud.and.arrow.down",
+          src: "sf-symbol:arrow.down.to.line",
           width: profile.valueSize,
           height: profile.valueSize,
           color: accent,
@@ -792,9 +792,9 @@ function renderAccessoryRectangular(results, refreshAfter) {
         gap: 2,
         children: [
           { type: "text", text: `${percent(item.remain, item.total)} `, font: { size: 11, family: "Menlo" } },
-          { type: "image", src: "sf-symbol:icloud.and.arrow.up", width: 10, height: 10 },
+          { type: "image", src: "sf-symbol:arrow.up.to.line", width: 10, height: 10 },
           { type: "text", text: formatBytes(item.upload), font: { size: 11, family: "Menlo" } },
-          { type: "image", src: "sf-symbol:icloud.and.arrow.down", width: 10, height: 10 },
+          { type: "image", src: "sf-symbol:arrow.down.to.line", width: 10, height: 10 },
           { type: "text", text: `${formatBytes(item.download)}丨${formatBytes(item.total)}`, font: { size: 11, family: "Menlo" } },
         ],
       },
