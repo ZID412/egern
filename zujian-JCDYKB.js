@@ -528,7 +528,7 @@ function renderTrafficSection(data, palette, options = {}) {
     : [
         {
           type: "image",
-          src: "sf-symbol:arrow.up.to.line",
+          src: "sf-symbol:icloud.and.arrow.up",
           width: profile.valueSize,
           height: profile.valueSize,
           color: accent,
@@ -543,7 +543,7 @@ function renderTrafficSection(data, palette, options = {}) {
         },
         {
           type: "image",
-          src: "sf-symbol:arrow.down.to.line",
+          src: "sf-symbol:icloud.and.arrow.down",
           width: profile.valueSize,
           height: profile.valueSize,
           color: accent,
@@ -792,9 +792,9 @@ function renderAccessoryRectangular(results, refreshAfter) {
         gap: 2,
         children: [
           { type: "text", text: `${percent(item.remain, item.total)} `, font: { size: 11, family: "Menlo" } },
-          { type: "image", src: "sf-symbol:arrow.up.to.line", width: 10, height: 10 },
+          { type: "image", src: "sf-symbol:icloud.and.arrow.up", width: 10, height: 10 },
           { type: "text", text: formatBytes(item.upload), font: { size: 11, family: "Menlo" } },
-          { type: "image", src: "sf-symbol:arrow.down.to.line", width: 10, height: 10 },
+          { type: "image", src: "sf-symbol:icloud.and.arrow.down", width: 10, height: 10 },
           { type: "text", text: `${formatBytes(item.download)}丨${formatBytes(item.total)}`, font: { size: 11, family: "Menlo" } },
         ],
       },
