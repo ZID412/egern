@@ -1,6 +1,6 @@
 /*
 ZID412 - Egern通用脚本小组件 - 机场订阅看板
-支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
+支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 环境变量配置说明
 推荐：URL+NAME+RESET 即可
@@ -480,8 +480,8 @@ async function httpRequest(ctx, method, url, headers) {
   if (!ctx.http) throw new Error("ctx.http is not available");
   const fn = ctx.http[method] || ctx.http.get;
   if (typeof fn !== "function") throw new Error(`ctx.http.${method} is not available`);
-  // 机制三：单次请求超时压缩至 3000ms（3秒）
-  return await fn.call(ctx.http, url, { headers, timeout: 3000 });
+  // 机制三：单次请求超时设置为 5000ms（5秒）
+  return await fn.call(ctx.http, url, { headers, timeout: 5000 });
 }
 
 function headerValue(headers, name) {
