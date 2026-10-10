@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.2
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.3
 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 【环境变量配置说明】
@@ -51,6 +51,11 @@ const DIRTY_HOLD_MS = 24 * 60 * 60 * 1000;
 // 判定「到期时间已推进」时允许的最大跨度，用于过滤秒/毫秒单位切换等异常值
 const MAX_RENEW_GAP_MS = 400 * 24 * 60 * 60 * 1000;
 
+// schedule 单次执行的抓取预算：Egern 对脚本有约 10s 的执行时限，超时会被强杀，
+// 导致 0:00 的基线写不进 storage。这里把每账号的请求预算压到 7s，
+// 配合并发执行，保证整批能在时限内收口，宁可少抓一个也别整批被杀。
+const SCHEDULE_BUDGET_MS = 7000;
+
 // 1. 定义可供随机抽取的 SF Symbols 图标池
 const RANDOM_SYMBOL_POOL = [
   "sf-symbol:cloud.drizzle",
@@ -81,13 +86,11 @@ export default async function (ctx = {}) {
   // schedule 脚本不需要返回值。
   if (ctx && ctx.cron) {
     const accounts = collectAccounts(ctx, MAX_ACCOUNTS);
-    for (const account of accounts) {
-      try {
-        await loadTraffic(ctx, account);   // 复用既有逻辑：跨天自动归零今日用量并写回 cache
-      } catch (_) {
-        // 单账号拉取失败则保留旧缓存，不覆盖
-      }
-    }
+    // 并发抓取（与 widget 路径一致）：Egern 对脚本有约 10s 执行时限，
+    // 串行 await 5 个账号会把各自的请求预算累加，极易整体超时被杀（日志 exec timeout）。
+    // 改为并发 + 收紧单账号预算，确保整批在时限内收口；loadTraffic 内部自捕获异常，
+    // 单账号失败只会保留旧缓存，不会让整批中断。
+    await Promise.all(accounts.map((account) => loadTraffic(ctx, account, SCHEDULE_BUDGET_MS)));
     try {
       if (typeof ctx.notify === "function") {
         ctx.notify({ title: "订阅流量看板", body: "今日数据已重置 ✓" });
@@ -392,7 +395,7 @@ function findAccount(list, key) {
   return list.find((item) => item.name === key);
 }
 
-async function loadTraffic(ctx, account) {
+async function loadTraffic(ctx, account, budgetMs) {
   const empty = {
     ...account,
     protocol: account.protocol || "",
@@ -422,7 +425,7 @@ async function loadTraffic(ctx, account) {
   }
 
   try {
-    const info = await fetchSubscriptionInfo(ctx, account.url);
+    const info = await fetchSubscriptionInfo(ctx, account.url, budgetMs);
     // 部分机场可能返回负值（统计异常或单位换算错误），此处钳到 0，
     // 否则 used 为负时 remain = total - used 会比总量还大
     // safeNum 额外挡掉 NaN 与 Infinity：响应头里的 1e999 会被 Number() 解析为 Infinity，
@@ -522,8 +525,8 @@ async function loadTraffic(ctx, account) {
   }
 }
 
-async function fetchSubscriptionInfo(ctx, url) {
-  const deadline = Date.now() + 15000;
+async function fetchSubscriptionInfo(ctx, url, deadlineMs = 15000) {
+  const deadline = Date.now() + deadlineMs;
 
   // 机制三：精简请求链路，只用 GET 避免 HEAD 拦截，给备用 UA 留足充足时间
   const requestPlans = [
