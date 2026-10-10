@@ -6,18 +6,18 @@ ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.3
 推荐：URL+NAME+RESET 即可
 
 【必填项】
-URL1 ~ URL5：订阅链接（至少配置 URL1）
+- URL1 ~ URL5：订阅链接（至少配置 URL1）
 
 【选填项 - 基础信息】
-NAME1 ~ NAME5：订阅名称（不填默认显示 Sub 1、Sub 2...）
-PROTOCOL1 ~ PROTOCOL5：协议备注（超长自动缩写：如 SS / Hy2）
-NODES1 ~ NODES5：节点数量备注（只填纯数字如 20）
-RESET1 ~ RESET5：每月重置日（1~31，不填写脚本自动推算，但自动推算可能不准确）
-ACCENT1 ~ ACCENT5：专属主题色（脚本自动显示，可自定义如#46D66B、#58A6FF等HEX颜色代码）
+- NAME1 ~ NAME5：订阅名称（不填默认显示 Sub 1、Sub 2...）
+- PROTOCOL1 ~ PROTOCOL5：协议备注（超长自动缩写：如 SS / Hy2）
+- NODES1 ~ NODES5：节点数量备注（只填纯数字如 20）
+- RESET1 ~ RESET5：每月重置日（1~31，不填写脚本自动推算，但自动推算可能不准确）
+- ACCENT1 ~ ACCENT5：专属主题色（脚本自动显示，可自定义如#46D66B、#58A6FF等HEX颜色代码）
 
 【选填项 - 全局设置】
-REFRESH_MINUTES：小组件刷新间隔（单位：分钟，默认 60）
-SHOW：筛选并指定排序（如填 1,3,4 或填名字，大组件最多展示 5 个）
+- REFRESH_MINUTES：小组件刷新间隔（单位：分钟，默认 60）
+- SHOW：筛选并指定排序（如填 1,3,4 或填名字，大组件最多展示 5 个）
 
 【协议/节点备注显示逻辑】
 - 仅填节点数 -> 显示「20节点丨今日...」
@@ -32,10 +32,6 @@ SHOW：筛选并指定排序（如填 1,3,4 或填名字，大组件最多展示
 3. Cron表达式填写"0 0 * * *"
 4. 脚本位置选择远程，填写此组件链接即可
 5. 环境变量填写你的订阅链接 URL1 ~ URL5
-
-由 Egern schedule(cron "0 0 * * *") 在每日 0:00 触发本脚本 schedule 分支主动重置当日数据；
-组件 refreshAfter 也已对齐 0:00。
-需在 Egern 主配置新增 schedule 条目指向本文件，并配置与 widget 相同的环境变量(URL1~5)
 
 该组件代码为修改版，原版地址：https://raw.githubusercontent.com/Harley0214/Egern-widgest-SUBTraffic-monitor/main/ModernSubTraffic-Egern-Generic.js
 ----------------------------------------------------------
