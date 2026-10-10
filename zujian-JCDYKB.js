@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.4.1
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.4.2
 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 环境变量配置说明
@@ -389,8 +389,10 @@ async function loadTraffic(ctx, account) {
 
   try {
     const info = await fetchSubscriptionInfo(ctx, account.url);
-    const upload = Number(info.upload || 0);
-    const download = Number(info.download || 0);
+    // 部分机场可能返回负值（统计异常或单位换算错误），此处钳到 0，
+    // 否则 used 为负时 remain = total - used 会比总量还大
+    const upload = Math.max(Number(info.upload || 0), 0);
+    const download = Math.max(Number(info.download || 0), 0);
     const total = Number(info.total || 0);
     const used = upload + download;
 
@@ -695,7 +697,7 @@ function renderTrafficSection(data, palette, options = {}) {
 
     const resetText = expireDaysText(data);
     const expireText = data.expire
-      ? `距离到期${dateText(data.expire)}`
+      ? `有效期${dateText(data.expire)}`
       : resetText
         ? resetText
         : data.cached
@@ -724,7 +726,7 @@ function renderTrafficSection(data, palette, options = {}) {
       ],
     });
 
-    // 协议/节点备注移动至今日使用和距离到期之间一行
+    // 协议/节点备注移动至今日使用和有效期之间一行
     if (prefix) {
       metaChildren.push(spacer(3));
       metaChildren.push({
@@ -745,7 +747,7 @@ function renderTrafficSection(data, palette, options = {}) {
       });
     }
 
-    // 距离到期
+    // 有效期
     metaChildren.push(spacer(3));
     metaChildren.push({
       type: "stack",
@@ -904,7 +906,7 @@ function renderTrafficSection(data, palette, options = {}) {
 
   const resetText = expireDaysText(data);
   const meta = data.expire
-    ? `到期${dateText(data.expire)}${resetText ? ' ' + resetText : ''}`
+    ? `有效期${dateText(data.expire)}${resetText ? ' ' + resetText : ''}`
     : resetText
       ? resetText
       : data.cached
@@ -1109,7 +1111,7 @@ function renderAccessoryRectangular(results, refreshAfter) {
   const item = results[0];
   const resetText = expireDaysText(item);
   const expireText = item.expire
-    ? `到期 ${dateText(item.expire)}${resetText ? ' ' + resetText : ''}`
+    ? `有效期 ${dateText(item.expire)}${resetText ? ' ' + resetText : ''}`
     : resetText
       ? resetText
       : statusText(item);
