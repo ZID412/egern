@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
 
 // 环境变量配置说明
 //【必填项】URL1 ~ URL5：订阅链接（至少配置 URL1）
@@ -238,6 +238,83 @@ function formatPrefix(protocol, nodes) {
     return `${shortestProtocol(rawP)} ${pureN}节点`;
   }
   if (rawP) {
+    return smartProtocol(rawP);
+  }
+  if (pureN) {
+    return `${pureN}节点`;
+  }
+  return "";
+}
+
+// 小尺寸组件完整协议映射
+function fullProtocol(val) {
+  if (!val) return "";
+  const v = String(val).trim();
+  const lower = v.toLowerCase();
+  const map = {
+    shadowsocks: "Shadowsocks",
+    "shadowsocks-2022": "Shadowsocks-2022",
+    ss2022: "Shadowsocks-2022",
+    ss: "Shadowsocks",
+    shadowsocksr: "ShadowsocksR",
+    ssr: "ShadowsocksR",
+    vless: "Vless",
+    vl: "Vless",
+    vmess: "Vmess",
+    vm: "Vmess",
+    trojan: "Trojan",
+    tr: "Trojan",
+    hysteria2: "Hysteria2",
+    "hysteria 2": "Hysteria2",
+    hy2: "Hysteria2",
+    hysteria: "Hysteria",
+    hy: "Hysteria",
+    wireguard: "WireGuard",
+    wg: "WireGuard",
+    tuic: "TUIC",
+    tuic5: "TUIC",
+    naiveproxy: "NaiveProxy",
+    naive: "NaiveProxy",
+    snell: "Snell",
+  };
+  return map[lower] || v;
+}
+
+// 估算文本在 Menlo 10pt 下的渲染宽度（pt）
+function estimateTextWidth(text, fontSize = 10) {
+  let width = 0;
+  for (const ch of String(text || "")) {
+    if (ch.charCodeAt(0) > 255) {
+      width += fontSize * 1.05; // 中文全角字符
+    } else {
+      width += fontSize * 0.6; // ASCII / 等宽字符
+    }
+  }
+  return width;
+}
+
+// 小尺寸组件协议/节点显示逻辑：优先完整协议，超长自动降级缩写
+function formatPrefixSmall(protocol, nodes, maxWidth = 124) {
+  const rawP = String(protocol || "").trim();
+  const rawN = String(nodes || "").trim();
+  const pureN = rawN.replace(/节点$/, "");
+
+  if (rawP && pureN) {
+    const full = `${fullProtocol(rawP)} ${pureN}节点`;
+    if (estimateTextWidth(full, 10) <= maxWidth) {
+      return full;
+    }
+    const smart = `${smartProtocol(rawP)} ${pureN}节点`;
+    if (estimateTextWidth(smart, 10) <= maxWidth) {
+      return smart;
+    }
+    return `${shortestProtocol(rawP)} ${pureN}节点`;
+  }
+  if (rawP) {
+    const full = fullProtocol(rawP);
+    if (estimateTextWidth(full, 10) <= maxWidth) {
+      return full;
+    }
     return smartProtocol(rawP);
   }
   if (pureN) {
@@ -520,7 +597,7 @@ function renderTrafficSection(data, palette, options = {}) {
   const accent = data.ok ? data.accent || palette.accent : palette.warning;
 
   if (options.small) {
-    const prefix = formatPrefix(data.protocol, data.nodes);
+    const prefix = formatPrefixSmall(data.protocol, data.nodes);
     const todayText = `今日${formatBytes(data.todayUsed)} 剩余${formatBytes(data.remain)}`;
 
     const resetText = expireDaysText(data);
