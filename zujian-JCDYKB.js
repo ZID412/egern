@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.4
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.3.6
 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 环境变量配置说明
@@ -377,10 +377,7 @@ async function loadTraffic(ctx, account) {
   };
 
   // 提前读取缓存，供脏数据校验与故障回退
-  // 槽位易主保护：缓存按槽位号存储，调换顺序 / 更换机场后同一槽位已是另一个账号，
-  // 旧缓存属于上一家机场，必须丢弃，否则会显示别人的用量、到期日与今日用量
-  let cached = readJSON(ctx, storageKey(account, "cache"), null);
-  if (cached && cached.url !== account.url) cached = null;
+  const cached = readJSON(ctx, storageKey(account, "cache"), null);
 
   try {
     const info = await fetchSubscriptionInfo(ctx, account.url);
@@ -1212,9 +1209,7 @@ function updateUsageHistory(ctx, account, used) {
   const dailyKey = storageKey(account, "daily");
   const today = todayKey(now);
 
-  // 槽位易主保护：与缓存同理，今日基线也按槽位存储，换号后旧基线属于上一个账号
-  let daily = readJSON(ctx, dailyKey, null);
-  if (daily && daily.url !== account.url) daily = null;
+  const daily = readJSON(ctx, dailyKey, null);
   const value = Number(used || 0);
 
   // 机制四（修复版）：基线延迟锚定 + 防归零保护
@@ -1227,7 +1222,7 @@ function updateUsageHistory(ctx, account, used) {
   if (!daily || daily.date !== today) {
     // 跨天：以当天首个有效观测值作为新基线；观测值为 0 时保持未锚定，今日用量按 0 处理
     baseline = value > 0 ? value : null;
-    nextDaily = { date: today, baselineUsed: baseline, url: account.url };
+    nextDaily = { date: today, baselineUsed: baseline };
   } else {
     const legacy = Number(daily.baselineUsed || 0);
     baseline = legacy > 0 ? legacy : null;
@@ -1240,7 +1235,7 @@ function updateUsageHistory(ctx, account, used) {
       baseline = null;
     }
 
-    nextDaily = { date: today, baselineUsed: baseline, url: account.url };
+    nextDaily = { date: today, baselineUsed: baseline };
   }
 
   // 基线未锚定时不沿用昨日数据，今日用量按 0 处理
@@ -1276,7 +1271,6 @@ function storageKey(account, type) {
 
 function cacheShape(data) {
   return {
-    url: data.url, // 槽位易主校验依据
     name: data.name,
     protocol: data.protocol,
     resetDay: data.resetDay,
