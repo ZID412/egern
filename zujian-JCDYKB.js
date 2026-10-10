@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.3.5
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.3.6
 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 环境变量配置说明
@@ -1334,7 +1334,8 @@ function formatBytes(bytes) {
   // KB 档一律不显示小数：153.83KB → 153KB
   if (index === 1) return `${Math.trunc(n)}KB`;
   // MB / GB / TB 统一保留一位小数（截断而非四舍五入：500.55GB → 500.5GB）
-  const text = (Math.floor(n * 10) / 10).toFixed(1);
+  // 加 1e-6 补偿浮点误差：500.3 的 IEEE754 实为 500.29999...，直接 floor 会掉成 500.2
+  const text = (Math.floor(n * 10 + 1e-6) / 10).toFixed(1);
   // 小数部分为 0 时自动隐藏小数点：60.0GB → 60GB，700.0MB → 700MB，500.5GB 保持原样
   const trimmed = text.indexOf(".") < 0 ? text : text.replace(/0+$/, "").replace(/\.$/, "");
   return `${trimmed}${units[index]}`;
