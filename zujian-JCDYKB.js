@@ -1,6 +1,6 @@
 /*
 ZID412 - Egern通用脚本小组件 - 机场订阅看板
-支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
+支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
 
 环境变量配置说明
 推荐：URL+NAME+RESET 即可
@@ -506,23 +506,6 @@ function parseSubscriptionHeader(header) {
       return [key.toLowerCase(), Number(value)];
     })
   );
-}
-
-function buildUrlVariants(url) {
-  const seen = new Set();
-  const variants = [];
-  const add = (item) => {
-    if (item && !seen.has(item)) {
-      seen.add(item);
-      variants.push(item);
-    }
-  };
-
-  add(url);
-  add(withParam(url, "flag", "clash"));
-  add(withParam(url, "flag", "meta"));
-  add(withParam(url, "target", "clash"));
-  return variants;
 }
 
 function withParam(url, key, value) {
