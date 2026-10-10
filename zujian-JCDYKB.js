@@ -426,7 +426,7 @@ async function fetchSubscriptionInfo(ctx, url) {
     { "User-Agent": "mihomo/1.19.3", Accept: "application/x-yaml,text/plain,*/*" },
   ];
 
-  const deadline = Date.now() + 20000;
+  const deadline = Date.now() + 10000;
 
   for (const headers of userAgents) {
     for (const target of variants) {
@@ -449,7 +449,7 @@ async function httpRequest(ctx, method, url, headers) {
   if (!ctx.http) throw new Error("ctx.http is not available");
   const fn = ctx.http[method] || ctx.http.get;
   if (typeof fn !== "function") throw new Error(`ctx.http.${method} is not available`);
-  return await fn.call(ctx.http, url, { headers, timeout: 9000 });
+  return await fn.call(ctx.http, url, { headers, timeout: 2500 });
 }
 
 function headerValue(headers, name) {
