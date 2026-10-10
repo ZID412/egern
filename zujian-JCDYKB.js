@@ -1,6 +1,6 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板
-支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.3
+支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 环境变量配置说明
 推荐：URL+NAME+RESET 即可
@@ -32,6 +32,10 @@ SHOW：筛选并指定排序（如填 1,3,4 或填名字，大组件最多展示
 
 const DEFAULT_REFRESH_MINUTES = 60;
 const MAX_ACCOUNTS = 5;
+
+// 脏数据（已用量异常归零）沿用上次有效值的最长保护时长
+// 超过该时长后强制接受归零，避免套餐重置时数据被无限期冻结在上一个周期
+const DIRTY_HOLD_MS = 24 * 60 * 60 * 1000;
 
 // 1. 定义可供随机抽取的 SF Symbols 图标池
 const RANDOM_SYMBOL_POOL = [
@@ -379,23 +383,40 @@ async function loadTraffic(ctx, account) {
     const total = Number(info.total || 0);
     const used = upload + download;
 
-    // 机制二：脏数据防冲刷校验
-    // 若请求返回的已用量异常为 0，而本地已有有效历史用量记录，判定为接口或订阅转换未透传真实用量，平滑继承有效用量
+    // 机制二（修复版）：脏数据防冲刷校验
+    // 已用量归零有两种成因，必须区分：
+    //   1) 真实套餐重置 —— 命中重置日窗口，应当接受归零
+    //   2) 接口或订阅转换未透传用量 —— 平滑继承上次有效值
+    // 沿用时记录归零起始时间，超过 DIRTY_HOLD_MS 后强制接受归零，避免数据被无限期冻结
+    const now = Date.now();
+    const cachedUsed = Number((cached && cached.used) || 0);
     let finalUpload = upload;
     let finalDownload = download;
     let finalUsed = used;
     let isDirtyData = false;
+    let zeroSince = 0;
 
-    if (used === 0 && cached && Number(cached.used || 0) > 0) {
-      finalUpload = Number(cached.upload || 0);
-      finalDownload = Number(cached.download || 0);
-      finalUsed = Number(cached.used || 0);
-      isDirtyData = true;
+    if (used === 0 && cachedUsed > 0) {
+      const prevZeroAt = Number((cached && cached.zeroSince) || 0);
+      zeroSince = prevZeroAt > 0 ? prevZeroAt : now;
+      const heldTooLong = now - zeroSince > DIRTY_HOLD_MS;
+      const realReset = inResetWindow(account, cached, new Date(now));
+
+      if (!realReset && !heldTooLong) {
+        finalUpload = Number((cached && cached.upload) || 0);
+        finalDownload = Number((cached && cached.download) || 0);
+        finalUsed = cachedUsed;
+        isDirtyData = true;
+      } else {
+        zeroSince = 0;
+      }
     }
 
     let history;
     if (isDirtyData) {
-      history = { todayUsed: Number(cached.todayUsed || 0) };
+      // 沿用上次有效画面，但缓存若来自前一天，今日用量必须归零，不能显示昨天的用量
+      const cachedDay = todayKey(new Date(Number((cached && cached.fetchedAt) || now)));
+      history = { todayUsed: cachedDay === todayKey(new Date(now)) ? Number((cached && cached.todayUsed) || 0) : 0 };
     } else {
       history = updateUsageHistory(ctx, account, finalUsed);
     }
@@ -411,7 +432,8 @@ async function loadTraffic(ctx, account) {
       expire: Number(info.expire || 0) || (cached && cached.expire) || 0,
       ok: total > 0,
       cached: isDirtyData,
-      fetchedAt: Date.now(),
+      fetchedAt: now,
+      zeroSince,
       error: "",
     };
 
@@ -474,6 +496,28 @@ async function fetchSubscriptionInfo(ctx, url) {
   }
 
   throw new Error("Missing subscription-userinfo header");
+}
+
+// 取当前账号的每月重置日：优先用 RESET 环境变量，缺失时按到期日的「日」推算
+function resetDayOf(account, cached) {
+  if (account && account.resetDay) return Number(account.resetDay);
+  const expire = Number((cached && cached.expire) || 0);
+  if (!expire) return null;
+  const d = new Date(expire > 1e12 ? expire : expire * 1000);
+  if (isNaN(d.getTime())) return null;
+  return d.getDate();
+}
+
+// 判断是否处于「合理的套餐重置窗口」：重置日当天或次日
+// 命中时接口返回已用量 0 属于真实重置，不应被脏数据保护拦截
+function inResetWindow(account, cached, now) {
+  const resetDay = resetDayOf(account, cached);
+  if (!resetDay || resetDay < 1) return false;
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const day = Math.min(resetDay, daysInMonth);
+  const today = now.getDate();
+  const nextDay = day >= daysInMonth ? 1 : day + 1;
+  return today === day || today === nextDay;
 }
 
 async function httpRequest(ctx, method, url, headers) {
@@ -1145,22 +1189,36 @@ function updateUsageHistory(ctx, account, used) {
   const today = todayKey(now);
 
   const daily = readJSON(ctx, dailyKey, null);
+  const value = Number(used || 0);
 
-  // 机制四：今日基线防归零保护，避免异常0用量将已有基准线洗掉
-  let nextDaily = daily;
+  // 机制四（修复版）：基线延迟锚定 + 防归零保护
+  // baselineUsed 为 null 表示当天基线尚未锚定（当天首个观测值为 0，可能是重置日也可能是脏数据）。
+  // 未锚定时不参与增量计算，等出现第一个有效非零用量再锚定，
+  // 这样既不会把累计用量误算成今日用量，也不会出现基线被写成 0 后今日用量永久停留在 0 的问题。
+  let baseline = null;
+  let nextDaily;
+
   if (!daily || daily.date !== today) {
-    if (used > 0) {
-      nextDaily = { date: today, baselineUsed: used };
-    } else {
-      nextDaily = daily ? { date: today, baselineUsed: daily.baselineUsed || 0 } : { date: today, baselineUsed: 0 };
+    // 跨天：以当天首个有效观测值作为新基线；观测值为 0 时保持未锚定，今日用量按 0 处理
+    baseline = value > 0 ? value : null;
+    nextDaily = { date: today, baselineUsed: baseline };
+  } else {
+    const legacy = Number(daily.baselineUsed || 0);
+    baseline = legacy > 0 ? legacy : null;
+
+    if (value > 0 && (baseline === null || baseline > value)) {
+      // 基线尚未锚定，或已用量低于基线（套餐重置 / 流量回退），重新锚定
+      baseline = value;
+    } else if (value === 0 && baseline !== null) {
+      // 当天用量归零：判定为套餐重置，基线失效并等待重新锚定
+      baseline = null;
     }
-  } else if (used > 0 && Number(daily.baselineUsed || 0) > used) {
-    // 仅在明确为有效正数且比旧基线小时，才视为套餐重置并更新基线
-    nextDaily = { date: today, baselineUsed: used };
+
+    nextDaily = { date: today, baselineUsed: baseline };
   }
 
-  const baseline = Number(nextDaily && nextDaily.baselineUsed || 0);
-  const todayUsed = used > 0 && baseline > 0 ? Math.max(used - baseline, 0) : (daily && daily.todayUsed ? daily.todayUsed : 0);
+  // 基线未锚定时不沿用昨日数据，今日用量按 0 处理
+  const todayUsed = baseline !== null && value > baseline ? value - baseline : 0;
 
   writeJSON(ctx, dailyKey, { ...nextDaily, todayUsed });
 
@@ -1204,6 +1262,7 @@ function cacheShape(data) {
     total: data.total,
     remain: data.remain,
     todayUsed: data.todayUsed || 0, // 机制一：补全今日用量缓存
+    zeroSince: data.zeroSince || 0, // 记录归零起始时间，供脏数据保护超时判定
     expire: data.expire,
     ok: data.ok,
     fetchedAt: data.fetchedAt,
