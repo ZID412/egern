@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.4.2
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.4.3
 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 环境变量配置说明
@@ -381,7 +381,7 @@ async function loadTraffic(ctx, account) {
   // 旧缓存属于上一家机场，必须丢弃，否则会显示别人的用量、到期日与今日用量
   // 兼容升级：v3.4 之前的缓存没有 url 字段，无从判断归属，这里按当前账号接纳并补写标识。
   // 不能丢弃——到期日与今日用量基线只能靠历史积累，一旦清空无法从接口恢复
-  let cached = readJSON(ctx, storageKey(account, "cache"), null);
+  let cached = readCacheSlot(ctx, account);
   if (cached) {
     if (!cached.url) cached.url = account.url;
     else if (cached.url !== account.url) cached = null;
@@ -391,9 +391,11 @@ async function loadTraffic(ctx, account) {
     const info = await fetchSubscriptionInfo(ctx, account.url);
     // 部分机场可能返回负值（统计异常或单位换算错误），此处钳到 0，
     // 否则 used 为负时 remain = total - used 会比总量还大
-    const upload = Math.max(Number(info.upload || 0), 0);
-    const download = Math.max(Number(info.download || 0), 0);
-    const total = Number(info.total || 0);
+    // safeNum 额外挡掉 NaN 与 Infinity：响应头里的 1e999 会被 Number() 解析为 Infinity，
+    // 直接参与运算会让 formatBytes 输出 InfinityPB 这类无效文本
+    const upload = Math.max(safeNum(info.upload), 0);
+    const download = Math.max(safeNum(info.download), 0);
+    const total = safeNum(info.total);
     const used = upload + download;
 
     // 机制二（修复版）：脏数据防冲刷校验
@@ -442,7 +444,10 @@ async function loadTraffic(ctx, account) {
       total,
       remain: Math.max(total - finalUsed, 0),
       todayUsed: history.todayUsed,
-      expire: Number(info.expire || 0) || (cached && cached.expire) || 0,
+      // 先用 Number() 归一再套 ∣∣ 兜底，顺序不能反：
+      // 若写成 info.expire ∣∣ cached.expire，"abc" 这类真值字符串会抢先占住，
+      // 导致本次无到期日时不再沿用缓存里的到期日；safeTime 只负责把越界值归 0
+      expire: safeTime(Number(info.expire || 0) || (cached && cached.expire) || 0),
       ok: total > 0,
       cached: isDirtyData,
       fetchedAt: now,
@@ -1222,6 +1227,8 @@ function updateUsageHistory(ctx, account, used) {
   // 槽位易主保护：与缓存同理，今日基线也按槽位存储，换号后旧基线属于上一个账号
   // 同样兼容升级：无 url 的遗留基线按当前账号接纳，避免升级即清空今日用量
   let daily = readJSON(ctx, dailyKey, null);
+  // 脏数据防御：storage 可能返回非对象，此时赋值属性会抛 TypeError（v3.4.1 起的风险）
+  if (daily && (typeof daily !== "object" || Array.isArray(daily))) daily = null;
   if (daily) {
     if (!daily.url) daily.url = account.url;
     else if (daily.url !== account.url) daily = null;
@@ -1279,6 +1286,46 @@ function writeJSON(ctx, key, value) {
     if (!storage) return;
     storage.setJSON(key, value);
   } catch (_) {}
+}
+
+// 数值清洗：NaN、Infinity、非数字一律归 0。
+// 拦截点是 storage 与响应头这两个入口以外的最后一道防线——
+// 这些值参与加减运算或百分比计算后会一路传播到 formatBytes，渲染出 NaNGB / InfinityPB
+function safeNum(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// 时间戳清洗：非法值、0、超出 Date 可表示范围（±8.64e15 ms）一律归 0，表示"无到期日"。
+// 越界时间戳会让 new Date() 得到 Invalid Date，最终渲染成 有效期NaN.NaN.NaN
+function safeTime(value) {
+  const raw = Number(value || 0);
+  if (!Number.isFinite(raw) || raw === 0) return 0;
+  const ms = raw > 1e12 ? raw : raw * 1000;
+  return Math.abs(ms) > 8.64e15 ? 0 : raw;
+}
+
+// 槽位缓存读取：统一在这里做形状校验与字段清洗。
+// Egern 的 storage 理论上只存本组件自己写入的 JSON，但跨版本升级、外部写入或宿主实现差异
+// 都可能让读回来的东西不是预期形状，进而抛出 TypeError 或渲染出 NaN。这里一次性兜住：
+//   - 非对象 / 数组  → 视为无缓存（v3.4.1 起因 typeof 缺失导致的白屏崩溃）
+//   - 数值字段       → NaN、Infinity、非数字一律归 0
+//   - expire         → 越界或非法一律归 0
+function readCacheSlot(ctx, account) {
+  const raw = readJSON(ctx, storageKey(account, "cache"), null);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  return {
+    ...raw,
+    upload: safeNum(raw.upload),
+    download: safeNum(raw.download),
+    used: safeNum(raw.used),
+    total: safeNum(raw.total),
+    remain: safeNum(raw.remain),
+    todayUsed: safeNum(raw.todayUsed),
+    zeroSince: safeNum(raw.zeroSince),
+    fetchedAt: safeNum(raw.fetchedAt),
+    expire: safeTime(raw.expire),
+  };
 }
 
 function storageKey(account, type) {
