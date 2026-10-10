@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.3.1
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.3.3
 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 环境变量配置说明
@@ -453,7 +453,13 @@ async function loadTraffic(ctx, account) {
         nodes: account.nodes || cached.nodes || "",
         accent: account.accent || cached.accent,
         symbol: account.symbol || cached.symbol,
-        todayUsed: cached.todayUsed != null ? Number(cached.todayUsed) : 0, // 机制一：补全今日用量回退
+        // 机制一：补全今日用量回退
+        // 与成功分支保持一致：缓存若来自前一天，今日用量必须归零，不能显示昨天的用量
+        todayUsed:
+          Number(cached.fetchedAt || 0) > 0 &&
+          todayKey(new Date(Number(cached.fetchedAt))) === todayKey(new Date())
+            ? Number(cached.todayUsed || 0)
+            : 0,
         cached: true,
         fetchedAt: cached.fetchedAt || Date.now(),
         error: shortError(error),
@@ -1326,7 +1332,10 @@ function formatBytes(bytes) {
     index++;
   }
   const digits = n >= 100 || index === 0 ? 0 : n >= 10 ? 1 : 2;
-  return `${n.toFixed(digits)}${units[index]}`;
+  // 小数部分为 0 时自动隐藏小数点：60.0GB → 60GB，5.50GB → 5.5GB，4.66GB 保持原样
+  const text = n.toFixed(digits);
+  const trimmed = text.indexOf(".") < 0 ? text : text.replace(/0+$/, "").replace(/\.$/, "");
+  return `${trimmed}${units[index]}`;
 }
 
 function dateText(expire) {
