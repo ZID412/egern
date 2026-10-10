@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
 
 // 环境变量配置说明
 //【必填项】URL1 ~ URL5：订阅链接（至少配置 URL1）
@@ -21,7 +21,6 @@
 // - 协议 + 节点同填 -> 显示协议缩写「hy2 20节点丨今日...」
 // - 两者都不填 -> 保持整洁，直接显示「今日...」
 
-// 推荐用中大尺寸组件🥺，小尺寸组件没做优化
 // 已知小bug：需要每日0:00手动刷新
 // 原版地址：https://raw.githubusercontent.com/Harley0214/Egern-widgest-SUBTraffic-monitor/main/ModernSubTraffic-Egern-Generic.js
 // ------------------------------------------
@@ -432,12 +431,11 @@ function renderWidget(family, results, refreshAfter) {
       refreshAfter,
       children: [
         renderHeader([item], palette, { small: true }),
-        spacer(8),
+        spacer(6),
         divider(palette),
-        spacer(8),
+        spacer(6),
         renderTrafficSection(item, palette, { small: true, compact: true }),
         { type: "spacer" },
-        renderFooter(results, palette),
       ],
     };
   }
@@ -494,13 +492,17 @@ function renderHeader(results, palette, options = {}) {
         height: options.compact ? 13 : 15,
         color: palette.accent,
       },
-      {
-        type: "text",
-        text: "Subs Dashboard",
-        font: { size: options.compact ? 16 : 18, weight: "semibold" },
-        textColor: palette.text,
-        maxLines: 1,
-      },
+      ...(options.small
+        ? []
+        : [
+            {
+              type: "text",
+              text: "Subs Dashboard",
+              font: { size: options.compact ? 16 : 18, weight: "semibold" },
+              textColor: palette.text,
+              maxLines: 1,
+            },
+          ]),
       { type: "spacer" },
       {
         type: "text",
@@ -516,49 +518,168 @@ function renderHeader(results, palette, options = {}) {
 function renderTrafficSection(data, palette, options = {}) {
   const profile = sectionProfile(options);
   const accent = data.ok ? data.accent || palette.accent : palette.warning;
-  const rightChildren = options.small
-    ? [
+
+  if (options.small) {
+    const resetText = expireDaysText(data);
+    const meta = data.expire
+      ? `到期${dateText(data.expire)}${resetText ? ' ' + resetText : ''}`
+      : resetText
+        ? resetText
+        : data.cached
+          ? "缓存"
+          : statusText(data);
+
+    const prefix = formatPrefix(data.protocol, data.nodes);
+    const leftMeta = `${prefix ? prefix + "丨" : ""}今日${formatBytes(data.todayUsed)} 剩余${formatBytes(data.remain)}`;
+
+    return {
+      type: "stack",
+      direction: "column",
+      gap: 0,
+      children: [
         {
-          type: "text",
-          text: formatBytes(data.total),
-          font: { size: profile.valueSize, weight: "medium", family: "Menlo" },
-          textColor: accent,
-          maxLines: 1,
-          minScale: 0.72,
+          type: "stack",
+          direction: "row",
+          alignItems: "center",
+          gap: 6,
+          children: [
+            {
+              type: "image",
+              src: data.symbol || "sf-symbol:network",
+              width: profile.icon,
+              height: profile.icon,
+              color: accent,
+            },
+            {
+              type: "text",
+              text: data.name || "Proxy",
+              font: { size: profile.nameSize, weight: "semibold" },
+              textColor: palette.text,
+              maxLines: 1,
+              minScale: 0.72,
+            },
+            {
+              type: "text",
+              text: percent(data.remain, data.total),
+              font: { size: profile.percentSize, weight: "semibold" },
+              textColor: accent,
+              maxLines: 1,
+            },
+            { type: "spacer" },
+          ],
         },
-      ]
-    : [
+        spacer(4),
         {
-          type: "image",
-          src: "sf-symbol:icloud.and.arrow.up",
-          width: profile.valueSize,
-          height: profile.valueSize,
-          color: accent,
+          type: "stack",
+          direction: "row",
+          alignItems: "center",
+          gap: 2,
+          children: [
+            {
+              type: "image",
+              src: "sf-symbol:icloud.and.arrow.up",
+              width: profile.valueSize,
+              height: profile.valueSize,
+              color: accent,
+            },
+            {
+              type: "text",
+              text: formatBytes(data.upload),
+              font: { size: profile.valueSize, weight: "medium", family: "Menlo" },
+              textColor: accent,
+              maxLines: 1,
+              minScale: 0.72,
+            },
+            {
+              type: "image",
+              src: "sf-symbol:icloud.and.arrow.down",
+              width: profile.valueSize,
+              height: profile.valueSize,
+              color: accent,
+            },
+            {
+              type: "text",
+              text: `${formatBytes(data.download)}丨${formatBytes(data.total)}`,
+              font: { size: profile.valueSize, weight: "medium", family: "Menlo" },
+              textColor: accent,
+              maxLines: 1,
+              minScale: 0.72,
+            },
+            { type: "spacer" },
+          ],
         },
+        spacer(profile.gapAfterHead),
+        renderProgress(ratio(data.remain, data.total), accent, palette, profile.progressHeight),
+        spacer(profile.gapAfterProgress),
         {
-          type: "text",
-          text: formatBytes(data.upload),
-          font: { size: profile.valueSize, weight: "medium", family: "Menlo" },
-          textColor: accent,
-          maxLines: 1,
-          minScale: 0.72,
+          type: "stack",
+          direction: "row",
+          alignItems: "center",
+          children: [
+            {
+              type: "text",
+              text: leftMeta,
+              font: { size: profile.metaSize, weight: "medium", family: "Menlo" },
+              textColor: accent,
+              maxLines: 1,
+              minScale: 0.7,
+            },
+            { type: "spacer" },
+          ],
         },
+        spacer(4),
         {
-          type: "image",
-          src: "sf-symbol:icloud.and.arrow.down",
-          width: profile.valueSize,
-          height: profile.valueSize,
-          color: accent,
+          type: "stack",
+          direction: "row",
+          alignItems: "center",
+          children: [
+            {
+              type: "text",
+              text: meta,
+              font: { size: profile.metaSize, weight: "medium", family: "Menlo" },
+              textColor: data.ok ? accent : palette.warning,
+              maxLines: 1,
+              minScale: 0.7,
+            },
+            { type: "spacer" },
+          ],
         },
-        {
-          type: "text",
-          text: `${formatBytes(data.download)}丨${formatBytes(data.total)}`,
-          font: { size: profile.valueSize, weight: "medium", family: "Menlo" },
-          textColor: accent,
-          maxLines: 1,
-          minScale: 0.72,
-        },
-      ];
+      ],
+    };
+  }
+
+  const rightChildren = [
+    {
+      type: "image",
+      src: "sf-symbol:icloud.and.arrow.up",
+      width: profile.valueSize,
+      height: profile.valueSize,
+      color: accent,
+    },
+    {
+      type: "text",
+      text: formatBytes(data.upload),
+      font: { size: profile.valueSize, weight: "medium", family: "Menlo" },
+      textColor: accent,
+      maxLines: 1,
+      minScale: 0.72,
+    },
+    {
+      type: "image",
+      src: "sf-symbol:icloud.and.arrow.down",
+      width: profile.valueSize,
+      height: profile.valueSize,
+      color: accent,
+    },
+    {
+      type: "text",
+      text: `${formatBytes(data.download)}丨${formatBytes(data.total)}`,
+      font: { size: profile.valueSize, weight: "medium", family: "Menlo" },
+      textColor: accent,
+      maxLines: 1,
+      minScale: 0.72,
+    },
+  ];
 
   const resetText = expireDaysText(data);
   const meta = data.expire
