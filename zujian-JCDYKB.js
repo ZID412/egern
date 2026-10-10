@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.4.4
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.0
 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 环境变量配置说明
@@ -25,7 +25,7 @@ SHOW：筛选并指定排序（如填 1,3,4 或填名字，大组件最多展示
 - 协议 + 节点同填 -> 显示「hy2 20节点丨今日...」（中/大尺寸默认显示缩写，小尺寸显示完整协议名，超长自动缩写）
 - 两者都不填 -> 保持整洁，直接显示「今日...」
 
-已知小bug：需要每日0:00手动刷新
+0:00 自动刷新（已修复）：由 Egern schedule(cron "0 0 * * *") 在每日 0:00 触发本脚本 schedule 分支主动重置当日数据；组件 refreshAfter 也已对齐 0:00。需在 Egern 主配置新增 schedule 条目指向本文件，并配置与 widget 相同的环境变量(URL1~5 等)。
 该组件代码为修改版，原版地址：https://raw.githubusercontent.com/Harley0214/Egern-widgest-SUBTraffic-monitor/main/ModernSubTraffic-Egern-Generic.js
 ----------------------------------------------------------
  */
@@ -64,8 +64,29 @@ function shuffleArray(array) {
 }
 
 export default async function (ctx = {}) {
+  // ===== Schedule 模式：由 Egern cron(0 0 * * *) 在每日 0:00 触发 =====
+  // 此时 ctx.cron 为 cron 表达式（真值）。主动为全部账号刷新缓存——loadTraffic 跨天会自然
+  // 把今日用量归零并写回 cache——使 storage 在 0:00 已是新一天基线；widget 视觉随后刷新即显示正确当日数据。
+  // schedule 脚本不需要返回值。
+  if (ctx && ctx.cron) {
+    const accounts = collectAccounts(ctx, MAX_ACCOUNTS);
+    for (const account of accounts) {
+      try {
+        await loadTraffic(ctx, account);   // 复用既有逻辑：跨天自动归零今日用量并写回 cache
+      } catch (_) {
+        // 单账号拉取失败则保留旧缓存，不覆盖
+      }
+    }
+    try {
+      if (typeof ctx.notify === "function") {
+        ctx.notify({ title: "订阅流量看板", body: "今日数据已重置 ✓" });
+      }
+    } catch (_) {}
+    return;
+  }
+
   const family = normalizeFamily(ctx.widgetFamily);
-  const refreshAfter = new Date(Date.now() + refreshMinutes(ctx) * 60 * 1000).toISOString();
+  const refreshAfter = new Date(nextMidnight()).toISOString();
   const accounts = collectAccounts(ctx, MAX_ACCOUNTS).slice(0, limitForFamily(family));
 
   if (!accounts.length) {
@@ -119,6 +140,15 @@ function refreshMinutes(ctx) {
   const raw = envValue(env, ["REFRESH_MINUTES", "refreshMinutes", "REFRESH", "refresh"]);
   const value = Number(raw || DEFAULT_REFRESH_MINUTES);
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_REFRESH_MINUTES;
+}
+
+// 计算下一个 0:00 的时间戳（本地时区）。用于把 refreshAfter 对齐每日 0:00，
+// 以及 schedule 分支锚定“今日基线”的日期。
+function nextMidnight(now = Date.now()) {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 1);
+  return d.getTime();
 }
 
 function collectAccounts(ctx, max) {
