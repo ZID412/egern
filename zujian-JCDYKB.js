@@ -1,5 +1,5 @@
 // ZID412 - Egern通用脚本小组件 - 机场订阅看板
-// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
+// 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 // 环境变量配置说明
 //【必填项】URL1 ~ URL5：订阅链接（至少配置 URL1）
@@ -427,13 +427,13 @@ function renderWidget(family, results, refreshAfter) {
     return {
       type: "widget",
       backgroundGradient: palette.backgroundGradient,
-      padding: [15, 15, 14, 15],
+      padding: [13, 15, 12, 15],
       refreshAfter,
       children: [
         renderHeader([item], palette, { small: true }),
-        spacer(6),
+        spacer(5),
         divider(palette),
-        spacer(6),
+        spacer(5),
         renderTrafficSection(item, palette, { small: true, compact: true }),
         { type: "spacer" },
       ],
@@ -520,17 +520,100 @@ function renderTrafficSection(data, palette, options = {}) {
   const accent = data.ok ? data.accent || palette.accent : palette.warning;
 
   if (options.small) {
+    const prefix = formatPrefix(data.protocol, data.nodes);
+    const todayText = `今日${formatBytes(data.todayUsed)} 剩余${formatBytes(data.remain)}`;
+
     const resetText = expireDaysText(data);
-    const meta = data.expire
-      ? `到期${dateText(data.expire)}${resetText ? ' ' + resetText : ''}`
+    const expireText = data.expire
+      ? `距离到期${dateText(data.expire)}`
       : resetText
         ? resetText
         : data.cached
           ? "缓存"
           : statusText(data);
 
-    const prefix = formatPrefix(data.protocol, data.nodes);
-    const leftMeta = `${prefix ? prefix + "丨" : ""}今日${formatBytes(data.todayUsed)} 剩余${formatBytes(data.remain)}`;
+    const showResetLine = Boolean(data.expire && resetText);
+
+    const metaChildren = [];
+
+    // 今日使用
+    metaChildren.push({
+      type: "stack",
+      direction: "row",
+      alignItems: "center",
+      children: [
+        {
+          type: "text",
+          text: todayText,
+          font: { size: profile.metaSize, weight: "medium", family: "Menlo" },
+          textColor: accent,
+          maxLines: 1,
+          minScale: 0.7,
+        },
+        { type: "spacer" },
+      ],
+    });
+
+    // 协议/节点备注移动至今日使用和距离到期之间一行
+    if (prefix) {
+      metaChildren.push(spacer(3));
+      metaChildren.push({
+        type: "stack",
+        direction: "row",
+        alignItems: "center",
+        children: [
+          {
+            type: "text",
+            text: prefix,
+            font: { size: profile.metaSize, weight: "medium", family: "Menlo" },
+            textColor: accent,
+            maxLines: 1,
+            minScale: 0.7,
+          },
+          { type: "spacer" },
+        ],
+      });
+    }
+
+    // 距离到期
+    metaChildren.push(spacer(3));
+    metaChildren.push({
+      type: "stack",
+      direction: "row",
+      alignItems: "center",
+      children: [
+        {
+          type: "text",
+          text: expireText,
+          font: { size: profile.metaSize, weight: "medium", family: "Menlo" },
+          textColor: data.ok ? accent : palette.warning,
+          maxLines: 1,
+          minScale: 0.7,
+        },
+        { type: "spacer" },
+      ],
+    });
+
+    // 距离重置下移一行
+    if (showResetLine) {
+      metaChildren.push(spacer(3));
+      metaChildren.push({
+        type: "stack",
+        direction: "row",
+        alignItems: "center",
+        children: [
+          {
+            type: "text",
+            text: resetText,
+            font: { size: profile.metaSize, weight: "medium", family: "Menlo" },
+            textColor: data.ok ? accent : palette.warning,
+            maxLines: 1,
+            minScale: 0.7,
+          },
+          { type: "spacer" },
+        ],
+      });
+    }
 
     return {
       type: "stack",
@@ -611,39 +694,7 @@ function renderTrafficSection(data, palette, options = {}) {
         spacer(profile.gapAfterHead),
         renderProgress(ratio(data.remain, data.total), accent, palette, profile.progressHeight),
         spacer(profile.gapAfterProgress),
-        {
-          type: "stack",
-          direction: "row",
-          alignItems: "center",
-          children: [
-            {
-              type: "text",
-              text: leftMeta,
-              font: { size: profile.metaSize, weight: "medium", family: "Menlo" },
-              textColor: accent,
-              maxLines: 1,
-              minScale: 0.7,
-            },
-            { type: "spacer" },
-          ],
-        },
-        spacer(4),
-        {
-          type: "stack",
-          direction: "row",
-          alignItems: "center",
-          children: [
-            {
-              type: "text",
-              text: meta,
-              font: { size: profile.metaSize, weight: "medium", family: "Menlo" },
-              textColor: data.ok ? accent : palette.warning,
-              maxLines: 1,
-              minScale: 0.7,
-            },
-            { type: "spacer" },
-          ],
-        },
+        ...metaChildren,
       ],
     };
   }
@@ -775,9 +826,9 @@ function sectionProfile(options) {
       percentSize: 17,
       valueSize: 10,
       metaSize: 10,
-      progressHeight: 6,
-      gapAfterHead: 6,
-      gapAfterProgress: 5,
+      progressHeight: 5,
+      gapAfterHead: 5,
+      gapAfterProgress: 4,
     };
   }
 
