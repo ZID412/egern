@@ -369,24 +369,48 @@ async function loadTraffic(ctx, account) {
     error: "No data",
   };
 
+  // 提前读取缓存，供脏数据校验与故障回退
+  const cached = readJSON(ctx, storageKey(account, "cache"), null);
+
   try {
     const info = await fetchSubscriptionInfo(ctx, account.url);
     const upload = Number(info.upload || 0);
     const download = Number(info.download || 0);
     const total = Number(info.total || 0);
     const used = upload + download;
-    const history = updateUsageHistory(ctx, account, used);
+
+    // 机制二：脏数据防冲刷校验
+    // 若请求返回的已用量异常为 0，而本地已有有效历史用量记录，判定为接口或订阅转换未透传真实用量，平滑继承有效用量
+    let finalUpload = upload;
+    let finalDownload = download;
+    let finalUsed = used;
+    let isDirtyData = false;
+
+    if (used === 0 && cached && Number(cached.used || 0) > 0) {
+      finalUpload = Number(cached.upload || 0);
+      finalDownload = Number(cached.download || 0);
+      finalUsed = Number(cached.used || 0);
+      isDirtyData = true;
+    }
+
+    let history;
+    if (isDirtyData) {
+      history = { todayUsed: Number(cached.todayUsed || 0) };
+    } else {
+      history = updateUsageHistory(ctx, account, finalUsed);
+    }
+
     const data = {
       ...empty,
-      upload,
-      download,
-      used,
+      upload: finalUpload,
+      download: finalDownload,
+      used: finalUsed,
       total,
-      remain: Math.max(total - used, 0),
+      remain: Math.max(total - finalUsed, 0),
       todayUsed: history.todayUsed,
-      expire: Number(info.expire || 0),
+      expire: Number(info.expire || 0) || (cached && cached.expire) || 0,
       ok: total > 0,
-      cached: false,
+      cached: isDirtyData,
       fetchedAt: Date.now(),
       error: "",
     };
@@ -394,7 +418,6 @@ async function loadTraffic(ctx, account) {
     writeJSON(ctx, storageKey(account, "cache"), cacheShape(data));
     return data;
   } catch (error) {
-    const cached = readJSON(ctx, storageKey(account, "cache"), null);
     if (cached) {
       return {
         ...empty,
@@ -405,6 +428,7 @@ async function loadTraffic(ctx, account) {
         nodes: account.nodes || cached.nodes || "",
         accent: account.accent || cached.accent,
         symbol: account.symbol || cached.symbol,
+        todayUsed: cached.todayUsed != null ? Number(cached.todayUsed) : 0, // 机制一：补全今日用量回退
         cached: true,
         fetchedAt: cached.fetchedAt || Date.now(),
         error: shortError(error),
@@ -419,26 +443,33 @@ async function loadTraffic(ctx, account) {
 }
 
 async function fetchSubscriptionInfo(ctx, url) {
-  const variants = buildUrlVariants(url);
-  const userAgents = [
-    { "User-Agent": "Quantumult%20X/1.5.2" },
-    { "User-Agent": "clash-verge-rev/2.3.1", Accept: "application/x-yaml,text/plain,*/*" },
-    { "User-Agent": "mihomo/1.19.3", Accept: "application/x-yaml,text/plain,*/*" },
+  const deadline = Date.now() + 15000;
+
+  // 机制三：精简请求链路，只用 GET 避免 HEAD 拦截，给备用 UA 留足充足时间
+  const requestPlans = [
+    {
+      headers: { "User-Agent": "Quantumult%20X/1.5.2" },
+      urls: [url],
+    },
+    {
+      headers: { "User-Agent": "clash-verge-rev/2.3.1", Accept: "application/x-yaml,text/plain,*/*" },
+      urls: [url, withParam(url, "flag", "clash"), withParam(url, "target", "clash")],
+    },
+    {
+      headers: { "User-Agent": "mihomo/1.19.3", Accept: "application/x-yaml,text/plain,*/*" },
+      urls: [url, withParam(url, "flag", "meta")],
+    },
   ];
 
-  const deadline = Date.now() + 20000;
-
-  for (const headers of userAgents) {
-    for (const target of variants) {
-      for (const method of ["head", "get"]) {
-        if (Date.now() > deadline) throw new Error("Subscription fetch timeout");
-        try {
-          const response = await httpRequest(ctx, method, target, headers);
-          const raw = headerValue(response && response.headers, "subscription-userinfo");
-          const info = parseSubscriptionHeader(raw);
-          if (info && info.total) return info;
-        } catch (_) {}
-      }
+  for (const plan of requestPlans) {
+    for (const target of plan.urls) {
+      if (Date.now() > deadline) throw new Error("Subscription fetch timeout");
+      try {
+        const response = await httpRequest(ctx, "get", target, plan.headers);
+        const raw = headerValue(response && response.headers, "subscription-userinfo");
+        const info = parseSubscriptionHeader(raw);
+        if (info && info.total) return info;
+      } catch (_) {}
     }
   }
 
@@ -449,7 +480,8 @@ async function httpRequest(ctx, method, url, headers) {
   if (!ctx.http) throw new Error("ctx.http is not available");
   const fn = ctx.http[method] || ctx.http.get;
   if (typeof fn !== "function") throw new Error(`ctx.http.${method} is not available`);
-  return await fn.call(ctx.http, url, { headers, timeout: 9000 });
+  // 机制三：单次请求超时压缩至 3000ms（3秒）
+  return await fn.call(ctx.http, url, { headers, timeout: 3000 });
 }
 
 function headerValue(headers, name) {
@@ -1130,13 +1162,24 @@ function updateUsageHistory(ctx, account, used) {
   const today = todayKey(now);
 
   const daily = readJSON(ctx, dailyKey, null);
-  const nextDaily =
-    !daily || daily.date !== today || Number(daily.baselineUsed || 0) > used
-      ? { date: today, baselineUsed: used }
-      : daily;
 
-  const todayUsed = Math.max(used - Number(nextDaily.baselineUsed || 0), 0);
-  writeJSON(ctx, dailyKey, nextDaily);
+  // 机制四：今日基线防归零保护，避免异常0用量将已有基准线洗掉
+  let nextDaily = daily;
+  if (!daily || daily.date !== today) {
+    if (used > 0) {
+      nextDaily = { date: today, baselineUsed: used };
+    } else {
+      nextDaily = daily ? { date: today, baselineUsed: daily.baselineUsed || 0 } : { date: today, baselineUsed: 0 };
+    }
+  } else if (used > 0 && Number(daily.baselineUsed || 0) > used) {
+    // 仅在明确为有效正数且比旧基线小时，才视为套餐重置并更新基线
+    nextDaily = { date: today, baselineUsed: used };
+  }
+
+  const baseline = Number(nextDaily && nextDaily.baselineUsed || 0);
+  const todayUsed = used > 0 && baseline > 0 ? Math.max(used - baseline, 0) : (daily && daily.todayUsed ? daily.todayUsed : 0);
+
+  writeJSON(ctx, dailyKey, { ...nextDaily, todayUsed });
 
   return { todayUsed };
 }
@@ -1177,6 +1220,7 @@ function cacheShape(data) {
     used: data.used,
     total: data.total,
     remain: data.remain,
+    todayUsed: data.todayUsed || 0, // 机制一：补全今日用量缓存
     expire: data.expire,
     ok: data.ok,
     fetchedAt: data.fetchedAt,
