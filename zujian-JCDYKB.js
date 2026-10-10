@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.4.3
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.4.4
 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 环境变量配置说明
@@ -589,7 +589,15 @@ function parseSubscriptionHeader(header) {
 }
 
 function withParam(url, key, value) {
-  return `${url}${url.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(value)}`;
+  // ① 处理 # 片段：参数必须拼在 # 之前。直接追加到末尾会落进 fragment，
+  //    而 GET 请求不会把 fragment 发给服务端，参数等于白拼
+  const hashIndex = url.indexOf("#");
+  const base = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
+  const fragment = hashIndex >= 0 ? url.slice(hashIndex) : "";
+  // ② 已有同名参数：保留订阅链接里原有的配置，不覆盖也不重复拼接
+  //    （拼成 ?flag=xxx&flag=clash 时服务端取哪个值取决于后端实现，行为不可预期）
+  if (new RegExp(`[?&]${key}=`).test(base)) return url;
+  return `${base}${base.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(value)}${fragment}`;
 }
 
 function renderWidget(family, results, refreshAfter) {
