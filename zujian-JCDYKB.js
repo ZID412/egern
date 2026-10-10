@@ -1,8 +1,8 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.0
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.2
 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
-环境变量配置说明
+【环境变量配置说明】
 推荐：URL+NAME+RESET 即可
 
 【必填项】
@@ -25,7 +25,18 @@ SHOW：筛选并指定排序（如填 1,3,4 或填名字，大组件最多展示
 - 协议 + 节点同填 -> 显示「hy2 20节点丨今日...」（中/大尺寸默认显示缩写，小尺寸显示完整协议名，超长自动缩写）
 - 两者都不填 -> 保持整洁，直接显示「今日...」
 
-0:00 自动刷新（已修复）：由 Egern schedule(cron "0 0 * * *") 在每日 0:00 触发本脚本 schedule 分支主动重置当日数据；组件 refreshAfter 也已对齐 0:00。需在 Egern 主配置新增 schedule 条目指向本文件，并配置与 widget 相同的环境变量(URL1~5 等)。
+【注意！】
+每日使用数据需要在0:00手动刷新，自动刷新需要以下配置：
+1. 在egern脚本界面新建脚本
+2. 类型选择“计划”
+3. Cron表达式填写"0 0 * * *"
+4. 脚本位置选择远程，填写此组件链接即可
+5. 环境变量填写组件的 URL 订阅链接链接
+
+由 Egern schedule(cron "0 0 * * *") 在每日 0:00 触发本脚本 schedule 分支主动重置当日数据；
+组件 refreshAfter 也已对齐 0:00。
+需在 Egern 主配置新增 schedule 条目指向本文件，并配置与 widget 相同的环境变量(URL1~5)
+
 该组件代码为修改版，原版地址：https://raw.githubusercontent.com/Harley0214/Egern-widgest-SUBTraffic-monitor/main/ModernSubTraffic-Egern-Generic.js
 ----------------------------------------------------------
  */
@@ -86,7 +97,9 @@ export default async function (ctx = {}) {
   }
 
   const family = normalizeFamily(ctx.widgetFamily);
-  const refreshAfter = new Date(nextMidnight()).toISOString();
+  // refreshAfter 跟随 REFRESH_MINUTES 环境变量（默认 60 分钟）；
+  // 0:00 当日数据重置由独立的 schedule(cron) 分支负责，与刷新频率互不干扰，可各自调节。
+  const refreshAfter = new Date(Date.now() + refreshMinutes(ctx) * 60 * 1000).toISOString();
   const accounts = collectAccounts(ctx, MAX_ACCOUNTS).slice(0, limitForFamily(family));
 
   if (!accounts.length) {
@@ -140,15 +153,6 @@ function refreshMinutes(ctx) {
   const raw = envValue(env, ["REFRESH_MINUTES", "refreshMinutes", "REFRESH", "refresh"]);
   const value = Number(raw || DEFAULT_REFRESH_MINUTES);
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_REFRESH_MINUTES;
-}
-
-// 计算下一个 0:00 的时间戳（本地时区）。用于把 refreshAfter 对齐每日 0:00，
-// 以及 schedule 分支锚定“今日基线”的日期。
-function nextMidnight(now = Date.now()) {
-  const d = new Date(now);
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + 1);
-  return d.getTime();
 }
 
 function collectAccounts(ctx, max) {
