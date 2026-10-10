@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.3
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.3.1
 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 环境变量配置说明
@@ -36,6 +36,9 @@ const MAX_ACCOUNTS = 5;
 // 脏数据（已用量异常归零）沿用上次有效值的最长保护时长
 // 超过该时长后强制接受归零，避免套餐重置时数据被无限期冻结在上一个周期
 const DIRTY_HOLD_MS = 24 * 60 * 60 * 1000;
+
+// 判定「到期时间已推进」时允许的最大跨度，用于过滤秒/毫秒单位切换等异常值
+const MAX_RENEW_GAP_MS = 400 * 24 * 60 * 60 * 1000;
 
 // 1. 定义可供随机抽取的 SF Symbols 图标池
 const RANDOM_SYMBOL_POOL = [
@@ -385,7 +388,7 @@ async function loadTraffic(ctx, account) {
 
     // 机制二（修复版）：脏数据防冲刷校验
     // 已用量归零有两种成因，必须区分：
-    //   1) 真实套餐重置 —— 命中重置日窗口，应当接受归零
+    //   1) 真实套餐重置 —— 命中重置日窗口或到期时间已推进，应当接受归零
     //   2) 接口或订阅转换未透传用量 —— 平滑继承上次有效值
     // 沿用时记录归零起始时间，超过 DIRTY_HOLD_MS 后强制接受归零，避免数据被无限期冻结
     const now = Date.now();
@@ -400,7 +403,7 @@ async function loadTraffic(ctx, account) {
       const prevZeroAt = Number((cached && cached.zeroSince) || 0);
       zeroSince = prevZeroAt > 0 ? prevZeroAt : now;
       const heldTooLong = now - zeroSince > DIRTY_HOLD_MS;
-      const realReset = inResetWindow(account, cached, new Date(now));
+      const realReset = isRealReset(account, cached, info, now);
 
       if (!realReset && !heldTooLong) {
         finalUpload = Number((cached && cached.upload) || 0);
@@ -498,26 +501,38 @@ async function fetchSubscriptionInfo(ctx, url) {
   throw new Error("Missing subscription-userinfo header");
 }
 
-// 取当前账号的每月重置日：优先用 RESET 环境变量，缺失时按到期日的「日」推算
-function resetDayOf(account, cached) {
-  if (account && account.resetDay) return Number(account.resetDay);
-  const expire = Number((cached && cached.expire) || 0);
-  if (!expire) return null;
-  const d = new Date(expire > 1e12 ? expire : expire * 1000);
-  if (isNaN(d.getTime())) return null;
-  return d.getDate();
-}
-
-// 判断是否处于「合理的套餐重置窗口」：重置日当天或次日
-// 命中时接口返回已用量 0 属于真实重置，不应被脏数据保护拦截
-function inResetWindow(account, cached, now) {
-  const resetDay = resetDayOf(account, cached);
-  if (!resetDay || resetDay < 1) return false;
+// 判断是否处于用户声明的每月重置日窗口：重置日当天或次日
+// 只信任显式配置的 RESET，不用到期日反推，避免长期套餐每月被误判一次
+function inResetWindow(account, now) {
+  const resetDay = Number(account && account.resetDay);
+  if (!resetDay || resetDay < 1 || resetDay > 31) return false;
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const day = Math.min(resetDay, daysInMonth);
   const today = now.getDate();
   const nextDay = day >= daysInMonth ? 1 : day + 1;
   return today === day || today === nextDay;
+}
+
+// 统一到期时间为毫秒，兼容秒 / 毫秒两种单位
+function expireToMs(value) {
+  const n = Number(value || 0);
+  if (!n) return 0;
+  return n > 1e12 ? n : n * 1000;
+}
+
+// 判断已用量归零属于「真实重置」还是「接口脏数据」
+// 信号一：用户显式配置了重置日，且今天落在重置窗口内
+// 信号二：本次返回的到期时间比缓存中的更晚，说明套餐确实已续期
+// 两条都不满足时按脏数据处理，由 DIRTY_HOLD_MS 兜底
+function isRealReset(account, cached, info, nowMs) {
+  if (inResetWindow(account, new Date(nowMs))) return true;
+
+  const cur = expireToMs(info && info.expire);
+  const prev = expireToMs(cached && cached.expire);
+  if (cur <= 0 || prev <= 0) return false;
+
+  const gap = cur - prev;
+  return gap > 0 && gap <= MAX_RENEW_GAP_MS;
 }
 
 async function httpRequest(ctx, method, url, headers) {
