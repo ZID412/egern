@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.3
+ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.4
 实时展示当前出口 IP、网络类型（住宅原生/机房网络）、地理位置，并评估 IP 风险值与欺诈等级。
 
 【环境变量配置说明】
@@ -694,6 +694,11 @@ export default async function(ctx) {
             badge(riskText, riskColor)
           ]
         },
+
+        // 中尺寸：人机流量比块与上方徽章（住宅原生 / 风险等级）之间留一段固定间距，
+        // 让它独立成一块；大尺寸本身就有 gap:14 / 16，不需要额外加。
+        // 未配置 CF_TOKEN 时不插入，避免白白占掉高度。
+        ...(botClass ? [{ type: 'stack', height: 8, children: [] }] : []),
 
         ...botClassRows(botClass),
 
