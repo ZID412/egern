@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.4
+ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.5
 实时展示当前出口 IP、网络类型（住宅原生/机房网络）、地理位置，并评估 IP 风险值与欺诈等级。
 
 【环境变量配置说明】
@@ -425,7 +425,9 @@ export default async function(ctx) {
   // 人机流量比横条：human 绿 / bot 红，左右两段胶囊紧贴（同订阅看板进度条画法）
   // 未配置 CF_TOKEN 或取数失败时返回空数组，不影响任何既有布局
   // v1.0.3：标签行与横条收进同一个 gap:2 的 column 容器，两者间距不再受外层 widget 的 gap 影响
-  function botClassRows(bc) {
+  // v1.0.5：标签色改成由调用方传入 —— 中尺寸底部（地区 + 风险值）用 C.secondary，
+  //          大尺寸 row() 的标签用 C.muted，两处基准不同，必须各跟各的否则会暗一档
+  function botClassRows(bc, labelColor) {
 
     if (!bc) return [];
 
@@ -450,7 +452,7 @@ export default async function(ctx) {
                 type: 'text',
                 text: '人机流量比 · AS' + String(data.asn),
                 font: { size: 'caption2', weight: 'medium' },
-                textColor: C.muted
+                textColor: labelColor || C.muted
               },
 
               { type: 'spacer' },
@@ -700,7 +702,7 @@ export default async function(ctx) {
         // 未配置 CF_TOKEN 时不插入，避免白白占掉高度。
         ...(botClass ? [{ type: 'stack', height: 8, children: [] }] : []),
 
-        ...botClassRows(botClass),
+        ...botClassRows(botClass, C.secondary),
 
         { type: 'spacer' },
 
