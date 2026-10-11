@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.13
+ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.14
 实时展示当前出口 IP、网络类型（住宅原生/机房网络）、地理位置，并评估 IP 风险值与欺诈等级。
 
 【环境变量配置说明】
@@ -694,27 +694,65 @@ export default async function(ctx) {
           maxLine: 1
         },
 
-        // v1.0.13：第 3 行 —— 左：网络类型 + 评分档位；右：风险值
+        // v1.0.14：第 3 行 —— 左：网络类型·评分档位（去掉圆点，改成文案拼接）；右：风险值（标签与数字贴近）
         {
           type: 'stack',
           direction: 'row',
           gap: 6,
           children: [
-            badge(networkText, networkColor, 10),
-            badge(riskText, riskColor, 10),
-            { type: 'spacer' },
+
+            // 左：网络类型 · 评分档位（原来的两个圆点徽章改成纯文字拼接）
             {
-              type: 'text',
-              text: '风险值',
-              font: { size: 11, weight: 'medium' },
-              textColor: C.secondary
+              type: 'stack',
+              direction: 'row',
+              gap: 3,
+              children: [
+                {
+                  type: 'text',
+                  text: networkText,
+                  font: { size: 10, weight: 'bold' },
+                  textColor: networkColor,
+                  maxLine: 1
+                },
+                {
+                  type: 'text',
+                  text: '·',
+                  font: { size: 10, weight: 'bold' },
+                  textColor: C.muted
+                },
+                {
+                  type: 'text',
+                  text: riskText,
+                  font: { size: 10, weight: 'bold' },
+                  textColor: riskColor,
+                  maxLine: 1
+                }
+              ]
             },
+
+            { type: 'spacer' },
+
+            // 右：风险值（标签与数字收进同一容器，gap 收紧避免隔太宽）
             {
-              type: 'text',
-              text: riskScoreText,
-              font: { size: 11, weight: 'bold' },
-              textColor: riskColor
+              type: 'stack',
+              direction: 'row',
+              gap: 3,
+              children: [
+                {
+                  type: 'text',
+                  text: '风险值',
+                  font: { size: 11, weight: 'medium' },
+                  textColor: C.secondary
+                },
+                {
+                  type: 'text',
+                  text: riskScoreText,
+                  font: { size: 11, weight: 'bold' },
+                  textColor: riskColor
+                }
+              ]
             }
+
           ]
         }
 
