@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.8
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.6
 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 【环境变量配置说明】
@@ -845,7 +845,6 @@ function renderTrafficSection(data, palette, options = {}) {
           direction: "row",
           alignItems: "center",
           gap: 6,
-          height: Math.round(profile.nameSize * 1.0),
           children: [
             {
               type: "image",
@@ -878,7 +877,6 @@ function renderTrafficSection(data, palette, options = {}) {
           direction: "row",
           alignItems: "center",
           gap: 2,
-          height: Math.round(profile.valueSize * 1.0),
           children: [
             {
               type: "image",
@@ -913,7 +911,9 @@ function renderTrafficSection(data, palette, options = {}) {
             { type: "spacer" },
           ],
         },
+        spacer(profile.gapAfterHead),
         renderProgress(ratio(data.remain, data.total), accent, palette, profile.progressHeight),
+        spacer(profile.gapAfterProgress),
         ...metaChildren,
       ],
     };
@@ -964,18 +964,6 @@ function renderTrafficSection(data, palette, options = {}) {
   const prefix = formatPrefix(data.protocol, data.nodes);
   const leftMeta = `${prefix ? prefix + "丨" : ""}今日${formatBytes(data.todayUsed)} 剩余${formatBytes(data.remain)}`;
 
-  // v3.5.8：横条紧贴第一行、第三行（真正生效的修法）。
-  // 诊断（1290x2796 截图实测，12px 条高 = 4pt，缩放 3.0 px/pt）：
-  //   IP 组件上方留白 12px = 4.0pt（标签行 caption2 小字）
-  //   订阅看板上方留白 36px = 12.0pt（第一行 nameSize 16pt 大字）
-  // 根因：16pt 大字行的「行盒高度」远大于字形可见高度，行盒底部自带约 8pt 空白。
-  //   v3.5.7 失败于：只删了 spacer，gap:2 仍作用在行盒之间 → 视觉留白没变。
-  // Egern DSL 经官方文档确认「不支持 margin / lineHeight / baseline」，
-  //   唯一能压缩的手段是给容器显式 height，把行盒多余高度裁掉。
-  // 做法：按字号给第一行 / 第三行容器设 height（= 字号，裁掉行盒多余高度），
-  //   column gap 归 0 —— 横条紧跟第一行容器下沿，视觉上真正贴住。
-  const headH = Math.round(profile.nameSize * 1.0);
-  const metaH = Math.round(profile.metaSize * 1.0);
   return {
     type: "stack",
     direction: "column",
@@ -986,7 +974,6 @@ function renderTrafficSection(data, palette, options = {}) {
         direction: "row",
         alignItems: "center",
         gap: 6,
-        height: headH,
         children: [
           {
             type: "image",
@@ -1020,12 +1007,13 @@ function renderTrafficSection(data, palette, options = {}) {
           },
         ],
       },
+      spacer(profile.gapAfterHead),
       renderProgress(ratio(data.remain, data.total), accent, palette, profile.progressHeight),
+      spacer(profile.gapAfterProgress),
       {
         type: "stack",
         direction: "row",
         alignItems: "center",
-        height: metaH,
         children: [
           {
             type: "text",
@@ -1059,6 +1047,8 @@ function sectionProfile(options) {
       valueSize: 10,
       metaSize: 10,
       progressHeight: 5,
+      gapAfterHead: 5,
+      gapAfterProgress: 4,
     };
   }
 
@@ -1070,6 +1060,8 @@ function sectionProfile(options) {
       valueSize: 11,
       metaSize: 10,
       progressHeight: 4,
+      gapAfterHead: 4,
+      gapAfterProgress: 4,
     };
   }
 
@@ -1082,6 +1074,8 @@ function sectionProfile(options) {
         valueSize: 11,
         metaSize: 10,
         progressHeight: 4,
+        gapAfterHead: 2,
+        gapAfterProgress: 2,
       };
     }
     return {
@@ -1091,6 +1085,8 @@ function sectionProfile(options) {
       valueSize: 11,
       metaSize: 10,
       progressHeight: 5,
+      gapAfterHead: 5,
+      gapAfterProgress: 5,
     };
   }
 
@@ -1101,6 +1097,8 @@ function sectionProfile(options) {
     valueSize: 12,
     metaSize: 11,
     progressHeight: 5,
+    gapAfterHead: 6,
+    gapAfterProgress: 6,
   };
 }
 
