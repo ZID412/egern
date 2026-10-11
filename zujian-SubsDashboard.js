@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.4
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.5
 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 【环境变量配置说明】
@@ -1183,16 +1183,13 @@ function renderAccessoryRectangular(results, refreshAfter) {
         type: "stack",
         direction: "row",
         alignItems: "center",
-        gap: 2,
         children: [
-          { type: "text", text: `${percent(item.remain, item.total)} `, font: { size: 11, family: "Menlo" } },
-          { type: "image", src: "sf-symbol:icloud.and.arrow.up", width: 10, height: 10 },
-          { type: "text", text: formatBytes(item.upload), font: { size: 11, family: "Menlo" } },
-          { type: "image", src: "sf-symbol:icloud.and.arrow.down", width: 10, height: 10 },
-          { type: "text", text: `${formatBytes(item.download)}丨${formatBytes(item.total)}`, font: { size: 11, family: "Menlo" } },
+          { type: "text", text: percent(item.remain, item.total), font: { size: 11, family: "Menlo" } },
+          { type: "spacer" },
+          { type: "text", text: formatBytes(item.total), font: { size: 11, family: "Menlo" } },
         ],
       },
-      { type: "text", text: `今日 ${formatBytes(item.todayUsed)} 剩余 ${formatBytes(item.remain)}  ${expireText}`, font: { size: 11, family: "Menlo" }, opacity: 0.7, maxLines: 1, minScale: 0.7 },
+      { type: "text", text: expireText, font: { size: 11, family: "Menlo" }, opacity: 0.7, maxLines: 1, minScale: 0.7 },
     ],
   };
 }
