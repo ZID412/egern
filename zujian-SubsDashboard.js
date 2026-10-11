@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.6
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.7
 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 【环境变量配置说明】
@@ -18,7 +18,7 @@ ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.6
 【选填项 - 全局设置】
 - REFRESH_MINUTES：小组件刷新间隔（单位：分钟，默认 60）
 - SHOW：筛选并指定排序（如填 1,3,4 或填名字，大组件最多展示 5 个）
-- WIDGET_STYLE：小组件背景 glass = 液态玻璃透壁纸，不填默认黑色背景
+- WIDGET_STYLE（可能失效）：小组件背景 glass = 液态玻璃透壁纸，不填默认黑色背景
 
 【协议/节点备注显示逻辑】
 - 仅填节点数 -> 显示「20节点丨今日...」
@@ -838,7 +838,7 @@ function renderTrafficSection(data, palette, options = {}) {
     return {
       type: "stack",
       direction: "column",
-      gap: 0,
+      gap: 2,
       children: [
         {
           type: "stack",
@@ -911,9 +911,7 @@ function renderTrafficSection(data, palette, options = {}) {
             { type: "spacer" },
           ],
         },
-        spacer(profile.gapAfterHead),
         renderProgress(ratio(data.remain, data.total), accent, palette, profile.progressHeight),
-        spacer(profile.gapAfterProgress),
         ...metaChildren,
       ],
     };
@@ -964,10 +962,13 @@ function renderTrafficSection(data, palette, options = {}) {
   const prefix = formatPrefix(data.protocol, data.nodes);
   const leftMeta = `${prefix ? prefix + "丨" : ""}今日${formatBytes(data.todayUsed)} 剩余${formatBytes(data.remain)}`;
 
+  // v3.5.7：第一行 / 横条 / 第三行收进同一个 column 容器，用小 gap 控制间距。
+  // 此前用 spacer(len) 撑开，文字行自身行高（nameSize 16pt）叠加后视觉留白达 11pt，
+  // 远松于 IP 组件的 3.4pt；改为容器 gap 后由内容高度决定，两者真正贴近。
   return {
     type: "stack",
     direction: "column",
-    gap: 0,
+    gap: 2,
     children: [
       {
         type: "stack",
@@ -1007,9 +1008,7 @@ function renderTrafficSection(data, palette, options = {}) {
           },
         ],
       },
-      spacer(profile.gapAfterHead),
       renderProgress(ratio(data.remain, data.total), accent, palette, profile.progressHeight),
-      spacer(profile.gapAfterProgress),
       {
         type: "stack",
         direction: "row",
@@ -1047,8 +1046,6 @@ function sectionProfile(options) {
       valueSize: 10,
       metaSize: 10,
       progressHeight: 5,
-      gapAfterHead: 5,
-      gapAfterProgress: 4,
     };
   }
 
@@ -1060,8 +1057,6 @@ function sectionProfile(options) {
       valueSize: 11,
       metaSize: 10,
       progressHeight: 4,
-      gapAfterHead: 4,
-      gapAfterProgress: 4,
     };
   }
 
@@ -1074,8 +1069,6 @@ function sectionProfile(options) {
         valueSize: 11,
         metaSize: 10,
         progressHeight: 4,
-        gapAfterHead: 2,
-        gapAfterProgress: 2,
       };
     }
     return {
@@ -1085,8 +1078,6 @@ function sectionProfile(options) {
       valueSize: 11,
       metaSize: 10,
       progressHeight: 5,
-      gapAfterHead: 5,
-      gapAfterProgress: 5,
     };
   }
 
@@ -1097,8 +1088,6 @@ function sectionProfile(options) {
     valueSize: 12,
     metaSize: 11,
     progressHeight: 5,
-    gapAfterHead: 6,
-    gapAfterProgress: 6,
   };
 }
 
