@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.6
+ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.7
 实时展示当前出口 IP、网络类型（住宅原生/机房网络）、地理位置，并评估 IP 风险值与欺诈等级。
 
 【环境变量配置说明】
@@ -404,19 +404,20 @@ export default async function(ctx) {
 
   }
 
-  function badge(text, color) {
+  // size 可选：不传 = caption2 + 圆点 7（中/大尺寸保持原样）；小尺寸传 10
+  function badge(text, color, size) {
 
     return {
       type: 'stack',
       direction: 'row',
-      gap: 5,
+      gap: size ? 4 : 5,
       children: [
 
         {
           type: 'image',
           src: 'sf-symbol:circle.fill',
-          width: 7,
-          height: 7,
+          width: size ? 6 : 7,
+          height: size ? 6 : 7,
           color: color
         },
 
@@ -424,7 +425,7 @@ export default async function(ctx) {
           type: 'text',
           text: text,
           font: {
-            size: 'caption2',
+            size: size || 'caption2',
             weight: 'bold'
           },
           textColor: color
@@ -432,6 +433,75 @@ export default async function(ctx) {
 
       ]
     };
+
+  }
+
+  // 小尺寸专用的人机流量比：标签 + ASN 在横条上方，human / bot 在横条下方
+  // （中/大尺寸是「标签与 human/bot 同一行、都在横条上方」，布局不同，故单独写一份）
+  function botClassRowsSmall(bc) {
+
+    if (!bc) return [];
+
+    const humanPct = Math.round(bc.human * 10) / 10;
+    const botPct = Math.round(bc.bot * 10) / 10;
+
+    return [
+
+      {
+        type: 'text',
+        text: '人机流量比 · AS' + String(data.asn),
+        font: { size: 10, weight: 'medium' },
+        textColor: C.secondary
+      },
+
+      {
+        type: 'stack',
+        direction: 'row',
+        alignItems: 'center',
+        gap: 0,
+        height: 4,
+        children: [
+          {
+            type: 'stack',
+            flex: Math.max(humanPct, 0.5),
+            height: 4,
+            backgroundColor: C.green,
+            borderRadius: 99,
+            children: []
+          },
+          {
+            type: 'stack',
+            flex: Math.max(botPct, 0.5),
+            height: 4,
+            backgroundColor: C.risk5,
+            borderRadius: 99,
+            children: []
+          }
+        ]
+      },
+
+      {
+        type: 'stack',
+        direction: 'row',
+        children: [
+          {
+            type: 'text',
+            text: 'human ' + humanPct + '%',
+            font: { size: 10, weight: 'medium' },
+            textColor: C.green
+          },
+          { type: 'spacer' },
+          {
+            type: 'text',
+            text: 'bot ' + botPct + '%',
+            font: { size: 10, weight: 'medium' },
+            textColor: C.risk5,
+            textAlign: 'right'
+          }
+        ]
+      }
+
+    ];
 
   }
 
@@ -618,6 +688,91 @@ export default async function(ctx) {
           },
           textColor: C.text,
           maxLine: 1
+        }
+
+      ]
+
+    };
+
+  }
+
+  // ============================================
+  // SMALL (小号尺寸) —— v1.0.7 新增，原来没有这个分支，小尺寸走的是大号布局会溢出
+  // 只保留：IP / 住宅机房 / 评分档位 / 人机流量比 / 位置 / 风险值
+  // 排版与中尺寸一致，字号整体缩小以适配 iOS 小尺寸
+  // ============================================
+
+  if (widgetFamily === 'systemSmall') {
+
+    return {
+
+      type: 'widget',
+      backgroundGradient: premiumGradient,
+      border: { width: 1, color: C.borderColor },
+      padding: 12,
+      gap: 3,
+
+      children: [
+
+        // --- 1. IP（不要标题栏，IP 直接顶上当标题）---
+        {
+          type: 'text',
+          text: maskIp(data.ip) || 'N/A',
+          font: { size: 15, weight: 'bold' },
+          textColor: C.text,
+          maxLine: 1
+        },
+
+        // IP 顶置、其余信息下移贴底，避免中间空一大块
+        { type: 'spacer' },
+
+        // --- 3. 徽章行：住宅/机房 + 评分档位 ---
+        {
+          type: 'stack',
+          direction: 'row',
+          gap: 8,
+          children: [
+            badge(networkText, networkColor, 10),
+            badge(riskText, riskColor, 10)
+          ]
+        },
+
+        // --- 4. 人机流量比（标签在上、human/bot 在下）---
+        ...botClassRowsSmall(botClass),
+
+        // --- 5. 位置 ---
+        {
+          type: 'text',
+          text: shortLocation || 'Unknown',
+          font: { size: 10, weight: 'medium' },
+          textColor: C.secondary,
+          maxLine: 1
+        },
+
+        // --- 6. 风险值 ---
+        {
+          type: 'stack',
+          direction: 'row',
+          children: [
+
+            {
+              type: 'text',
+              text: '风险值',
+              font: { size: 10, weight: 'medium' },
+              textColor: C.secondary
+            },
+
+            { type: 'spacer' },
+
+            {
+              type: 'text',
+              text: riskScoreText,
+              font: { size: 13, weight: 'bold' },
+              textColor: riskColor,
+              textAlign: 'right'
+            }
+
+          ]
         }
 
       ]
