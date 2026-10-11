@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.8
+ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.9
 实时展示当前出口 IP、网络类型（住宅原生/机房网络）、地理位置，并评估 IP 风险值与欺诈等级。
 
 【环境变量配置说明】
@@ -455,11 +455,20 @@ export default async function(ctx) {
         gap: 2,
         children: [
 
+          // 包一层 row + spacer 让文字撑满宽度 —— column 容器里的窄元素默认会被居中，
+          // alignItems:'start' 在本地示例中没有先例，不敢赌，用撑满宽度来实现左对齐
           {
-            type: 'text',
-            text: '人机流量比 · AS' + String(data.asn),
-            font: { size: 10, weight: 'medium' },
-            textColor: C.secondary
+            type: 'stack',
+            direction: 'row',
+            children: [
+              {
+                type: 'text',
+                text: '人机流量比 · AS' + String(data.asn),
+                font: { size: 10, weight: 'medium' },
+                textColor: C.secondary
+              },
+              { type: 'spacer' }
+            ]
           },
 
           {
@@ -721,11 +730,33 @@ export default async function(ctx) {
       backgroundGradient: premiumGradient,
       border: { width: 1, color: C.borderColor },
       padding: 12,
-      gap: 8,
+      gap: 5,
 
       children: [
 
-        // --- 1. IP（不要标题栏，IP 直接顶上当标题）---
+        // --- 1. 图标 + 标题（策略组名在小尺寸里不显示）---
+        {
+          type: 'stack',
+          direction: 'row',
+          gap: 5,
+          children: [
+            {
+              type: 'image',
+              src: 'sf-symbol:leaf.fill',
+              width: 13,
+              height: 13,
+              color: C.green
+            },
+            {
+              type: 'text',
+              text: 'IPPure',
+              font: { size: 14, weight: 'bold' },
+              textColor: C.text
+            }
+          ]
+        },
+
+        // --- 2. IP ---
         // 字号 16pt 是宽度上限：小尺寸可用宽约 134pt，脱敏 IP 最长 15 字符，再大就会溢出
         {
           type: 'text',
@@ -757,11 +788,18 @@ export default async function(ctx) {
           children: [
 
             {
-              type: 'text',
-              text: shortLocation || 'Unknown',
-              font: { size: 10, weight: 'medium' },
-              textColor: C.secondary,
-              maxLine: 1
+              type: 'stack',
+              direction: 'row',
+              children: [
+                {
+                  type: 'text',
+                  text: shortLocation || 'Unknown',
+                  font: { size: 10, weight: 'medium' },
+                  textColor: C.secondary,
+                  maxLine: 1
+                },
+                { type: 'spacer' }
+              ]
             },
 
             {
