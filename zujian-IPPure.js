@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.5
+ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.6
 实时展示当前出口 IP、网络类型（住宅原生/机房网络）、地理位置，并评估 IP 风险值与欺诈等级。
 
 【环境变量配置说明】
@@ -9,7 +9,7 @@ ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.5
 名称：CF_TOKEN
 值：Cloudflare API Token（可选，配置后才会显示「人机流量比」横条）
 
-人机流量比来自 Cloudflare Radar，可以前往CF官网免费申请
+人机流量比数据来自 Cloudflare Radar，可以前往CF官网免费申请
 按ASN统计过去 7 天的human / bot 请求占比，不是针对单个 IP
 
 ----------------------------------------------------------
@@ -127,12 +127,13 @@ export default async function(ctx) {
     blue: '#60A5FA',
 
     // IPPure 6 档风险色（绿→红渐进）
-    risk0: '#22C55E',  // 0-15   优质
-    risk1: '#84CC16',  // 15-25  良好
-    risk2: '#EAB308',  // 25-40  普通
-    risk3: '#F59E0B',  // 40-50  低危
-    risk4: '#F97316',  // 50-70  中危
-    risk5: '#DC2626',  // 70-100 高危
+    risk0: '#22C55E',  // 0-15    优质
+    risk1: '#84CC16',  // 16-25   良好
+    risk2: '#EAB308',  // 26-40   普通
+    risk3: '#F59E0B',  // 41-50   低危
+    risk4: '#F97316',  // 51-70   中危
+    risk5: '#DC2626',  // 71-85   高危
+    risk6: '#EF4444',  // 86-100  极高危（比 risk5 更亮：深色底上更深的红反而更糊）
 
     green: '#34D399',
     yellow: '#FACC15',
@@ -256,7 +257,7 @@ export default async function(ctx) {
   }
 
 
-  // 关键：fraudScore 缺失 !== 0 分。接口不返回该字段时（限流、IPv6 不评分、额度耗尽）
+  // 关键：fraudScore 缺失 !== 0 分。接口不返回该字段时（IPv6 不评分、接口未返回、触发限流）
   // 一律显示「未检测」，不能再按 0 分渲染成绿色「优质」。
   const hasScore =
     data.fraudScore !== undefined &&
@@ -288,6 +289,13 @@ export default async function(ctx) {
   } else if (riskScore <= 70) {
     riskText = '中危';
     riskColor = C.risk4;
+  } else if (riskScore <= 85) {
+    riskText = '高危';
+    riskColor = C.risk5;
+  } else {
+    // 86-100：原来 71-100 一档太粗，51 分和 99 分被显示成同一个词，这里拆开
+    riskText = '极高危';
+    riskColor = C.risk6;
   }
 
   const riskIconMap = {
@@ -302,6 +310,9 @@ export default async function(ctx) {
   // 「未检测」专用图标：圆环 + 横杠
   const UNKNOWN_ICON = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0NCA0NCI+CiAgPHBhdGggZD0iTTIyLDBBMjIsMjIsMCwxLDEsMCwyMiwyMiwyMiwwLDAsMSwyMiwwWm0wLDMuNkExOC40LDE4LjQsMCwxLDAsNDAuNCwyMiwxOC40LDE4LjQsMCwwLDAsMjIsMy42WiIgZmlsbD0iI2ZmZiIvPgogIDxyZWN0IHg9IjEyLjUiIHk9IjIwLjIiIHdpZHRoPSIxOSIgaGVpZ2h0PSIzLjYiIHJ4PSIxLjgiIGZpbGw9IiNmZmYiLz4KPC9zdmc+Cg==';
 
+  // v1.0.6：极高危（86-100）专用图标 —— 骷髅，比「高危」的便便更重一档
+  const SKULL_ICON = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0NCA0NCI+CiAgPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBmaWxsPSIjZmZmIiBkPSJNMjIsMkMzMS45LDIgNDAsOS42IDQwLDE5LjJDNDAsMjUgMzcsMzAgMzIuNCwzMi44TDMyLjQsMzhBMywzIDAgMCAxIDI5LjQsNDFMMTQuNiw0MUEzLDMgMCAwIDEgMTEuNiwzOEwxMS42LDMyLjhDNywzMCA0LDI1IDQsMTkuMkM0LDkuNiAxMi4xLDIgMjIsMlpNMTUuNCwxM2E2LjIsNi4yIDAgMCAwIDAsMTIuNGE2LjIsNi4yIDAgMCAwIDAsLTEyLjRaTTI4LjYsMTNhNi4yLDYuMiAwIDAgMCAwLDEyLjRhNi4yLDYuMiAwIDAgMCAwLC0xMi40Wk0yMiwyNkwxOCwzMUwyNiwzMVpNMTYuOCwzNEwxNi44LDQwTDE5LjIsNDBMMTkuMiwzNFpNMjQuOCwzNEwyNC44LDQwTDI3LjIsNDBMMjcuMiwzNFoiLz4KPC9zdmc+Cg==';
+
   let riskIcon = riskIconMap.risk5_poop;
   if      (!hasScore)       riskIcon = UNKNOWN_ICON;
   else if (riskScore <= 15) riskIcon = riskIconMap.risk0_house;
@@ -309,6 +320,8 @@ export default async function(ctx) {
   else if (riskScore <= 40) riskIcon = riskIconMap.risk2_neutral;
   else if (riskScore <= 50) riskIcon = riskIconMap.risk3_thinking;
   else if (riskScore <= 70) riskIcon = riskIconMap.risk4_warning;
+  else if (riskScore <= 85) riskIcon = riskIconMap.risk5_poop;
+  else                      riskIcon = SKULL_ICON;
 
   // isResidential 缺失时不能当 false（= 机房网络），同样按「未检测」处理
   const hasResidential = typeof data.isResidential === 'boolean';
