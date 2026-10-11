@@ -1,13 +1,16 @@
 /*
-ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.11
+ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.12
 实时展示当前出口 IP、网络类型（住宅原生/机房网络）、地理位置，并评估 IP 风险值与欺诈等级。
 
 【环境变量配置说明】
 名称：GROUP
 值：你的策略组名称
 
+名称：WIDGET_STYLE
+值：glass（液态玻璃透壁纸），不填默认黑色背景
+
 名称：CF_TOKEN
-值：Cloudflare API Token（可选，配置后才会显示「人机流量比」横条）
+值：你的 Cloudflare API Token（可选，配置后才会显示「人机流量比」横条）
 
 人机流量比数据来自 Cloudflare Radar，可以前往CF官网免费申请
 按ASN统计过去 7 天的human / bot 请求占比，不是针对单个 IP
@@ -102,6 +105,21 @@ async function fetchBotClass(ctx, asn, strategyGroup, token) {
 }
 
 
+// 玻璃皮肤开关：读取 WIDGET_STYLE 环境变量
+//   glass  ：根容器不设置任何背景，交给 iOS 系统材质接管（iOS 26 = 液态玻璃，壁纸透出）
+//   不填/其他：保留原深色渐变背景（黑色），与旧版完全一致，可随时回退
+function styleMode(ctx) {
+  const value = String((ctx.env && ctx.env.WIDGET_STYLE) || 'classic').trim().toLowerCase();
+  return value === 'glass' ? 'glass' : 'classic';
+}
+
+// 生成根容器背景：玻璃模式返回空对象（不画背景 → 系统材质透出），否则返回原深色渐变。
+// 仅影响背景，不动任何 IP / 文字 / 横条逻辑。
+function rootBackground(mode, gradient) {
+  if (mode === 'glass') return {};
+  return { backgroundGradient: gradient };
+}
+
 export default async function(ctx) {
 
   const strategyGroup =
@@ -109,6 +127,9 @@ export default async function(ctx) {
 
   const widgetFamily =
     ctx.widgetFamily || 'systemLarge';
+
+  // 玻璃皮肤开关：读取 WIDGET_STYLE（glass = 液态玻璃透壁纸；不填 = 黑色背景）
+  const style = styleMode(ctx);
 
   // 可选：配置了 CF_TOKEN 才会去查人机流量比
   const cfToken = String(ctx.env.CF_TOKEN || '').trim();
@@ -727,7 +748,7 @@ export default async function(ctx) {
     return {
 
       type: 'widget',
-      backgroundGradient: premiumGradient,
+      ...rootBackground(style, premiumGradient),
       border: { width: 1, color: C.borderColor },
       padding: 12,
       gap: 2,
@@ -858,7 +879,7 @@ export default async function(ctx) {
     return {
 
       type: 'widget',
-      backgroundGradient: premiumGradient,
+      ...rootBackground(style, premiumGradient),
       border: { width: 1, color: C.borderColor },
       padding: [16, 18, 16, 18], 
 
@@ -1004,7 +1025,7 @@ export default async function(ctx) {
     return {
 
       type: 'widget',
-      backgroundGradient: premiumGradient,
+      ...rootBackground(style, premiumGradient),
       border: { width: 1, color: C.borderColor },
       padding: 22,
       gap: 16,
@@ -1162,7 +1183,7 @@ export default async function(ctx) {
   return {
 
     type: 'widget',
-    backgroundGradient: premiumGradient,
+    ...rootBackground(style, premiumGradient),
     border: { width: 1, color: C.borderColor },
     padding: 20,
     gap: 14,
