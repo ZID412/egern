@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.12
+ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.13
 实时展示当前出口 IP、网络类型（住宅原生/机房网络）、地理位置，并评估 IP 风险值与欺诈等级。
 
 【环境变量配置说明】
@@ -670,9 +670,10 @@ export default async function(ctx) {
 
       children: [
 
+        // v1.0.13：第 1 行由原来的地区改为 IP 地址（地区下移到第 2 行）
         {
           type: 'text',
-          text: (data.countryCode || data.country || '--') + (data.city ? ' · ' + data.city : ''),
+          text: maskIp(data.ip) || 'N/A',
           font: {
             size: 14,
             weight: 'semibold'
@@ -681,9 +682,10 @@ export default async function(ctx) {
           maxLine: 1
         },
 
+        // v1.0.13：第 2 行改为地区（原来在第 1 行）
         {
           type: 'text',
-          text: data.asOrganization || 'Unknown',
+          text: (data.countryCode || data.country || '--') + (data.city ? ' · ' + data.city : ''),
           font: {
             size: 11,
             weight: 'medium'
@@ -692,15 +694,28 @@ export default async function(ctx) {
           maxLine: 1
         },
 
+        // v1.0.13：第 3 行 —— 左：网络类型 + 评分档位；右：风险值
         {
-          type: 'text',
-          text: networkText,
-          font: {
-            size: 11,
-            weight: 'medium'
-          },
-          textColor: networkColor,
-          maxLine: 1
+          type: 'stack',
+          direction: 'row',
+          gap: 6,
+          children: [
+            badge(networkText, networkColor, 10),
+            badge(riskText, riskColor, 10),
+            { type: 'spacer' },
+            {
+              type: 'text',
+              text: '风险值',
+              font: { size: 11, weight: 'medium' },
+              textColor: C.secondary
+            },
+            {
+              type: 'text',
+              text: riskScoreText,
+              font: { size: 11, weight: 'bold' },
+              textColor: riskColor
+            }
+          ]
         }
 
       ]
