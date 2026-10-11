@@ -15,6 +15,7 @@ ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.12
 人机流量比数据来自 Cloudflare Radar，可以前往CF官网免费申请
 按ASN统计过去 7 天的human / bot 请求占比，不是针对单个 IP
 
+该组件代码为修改版，原版地址：https://raw.githubusercontent.com/Bf0rest/Egern/main/Widget/IPPure-emoji.js
 ----------------------------------------------------------
  */
 
