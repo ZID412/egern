@@ -1,4 +1,4 @@
-// ZID412 - Egern通用脚本小组件 - ip纯净度
+// ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.1
 // 实时展示当前出口 IP、网络类型（住宅原生/机房网络）、地理位置，并评估 IP 风险值与欺诈等级。
 
 // 环境变量：
@@ -74,7 +74,7 @@ export default async function(ctx) {
 
 
   let data = null;
-  let fromCache = false;
+  let source = 'live';          // live | cache | ipasn | failed
   let latency = '--';
   const CACHE_TTL = 3600000;
   const cacheKey = 'ippure_' + strategyGroup;
@@ -91,8 +91,15 @@ export default async function(ctx) {
       }
     );
 
-    data = await resp.json();
-    if (data && data.ip) data.ip = maskIp(data.ip);
+    const body = await resp.json();
+
+    // 限流 / 错误页 / 空 JSON 都没有 ip 字段，一律按本次失败处理，避免渲染出一张空白卡
+    if (!body || typeof body !== 'object' || !body.ip) {
+      throw new Error('invalid payload');
+    }
+
+    data = body;
+    data.ip = maskIp(data.ip);
     latency = (Date.now() - t0) + 'ms';
 
     try {
@@ -105,11 +112,15 @@ export default async function(ctx) {
 
     try {
       const cached = ctx.storage.getJSON(cacheKey);
-      if (cached) {
-        data = cached;
-        fromCache = true;
-        const ageMin = Math.round((Date.now() - cached.ts) / 60000);
-        latency = ageMin ? '缓存 ' + ageMin + 'min' : '缓存';
+      if (cached && typeof cached === 'object') {
+        // 老缓存没有 ts 字段：接纳，不做严格丢弃；只有拿到 ts 才校验新鲜度
+        const ts = Number(cached.ts) || 0;
+        if (ts === 0 || (Date.now() - ts) <= CACHE_TTL) {
+          data = cached;
+          source = 'cache';
+          const ageMin = ts ? Math.round((Date.now() - ts) / 60000) : 0;
+          latency = ageMin > 0 ? ageMin + 'min前' : '刚刚';
+        }
       }
     } catch(_) {}
 
@@ -120,7 +131,9 @@ export default async function(ctx) {
           { policy: strategyGroup, timeout: 5000 }
         );
         const ipBody = await ipResp.json();
-        const ip = ipBody.origin || '--';
+        // 经过代理时 origin 可能是 "ip1, ip2"
+        const rawOrigin = String((ipBody && ipBody.origin) || '');
+        const ip = String(rawOrigin.split(',')[0] || '').trim() || '--';
         const asn = $utils.ipasn(ip);
         data = {
           ip: ip,
@@ -129,12 +142,13 @@ export default async function(ctx) {
           country: '--',
           region: '',
           city: '',
-          fraudScore: 0,
-          isResidential: false,
-          isBroadcast: false
+          // 拿不到风险数据就留空，不写死 0 —— 否则会显示成「优质」这种假安全结论
+          fraudScore: undefined,
+          isResidential: undefined,
+          isBroadcast: undefined
         };
         latency = 'ipasn';
-        fromCache = true;
+        source = 'ipasn';
       } catch(_) {}
     }
 
@@ -150,20 +164,35 @@ export default async function(ctx) {
       country: 'Unknown',
       region: '',
       city: '',
-      fraudScore: 99,
-      isResidential: false
+      // 同理：连 IP 都没拿到时不编造分数（原来写死 99 显示「高危」，同样属于编造）
+      fraudScore: undefined,
+      isResidential: undefined,
+      isBroadcast: undefined
     };
+    source = 'failed';
+    latency = '--';
 
   }
 
 
-  const riskScore =
-    Number(data.fraudScore || 0);
+  // 关键：fraudScore 缺失 !== 0 分。接口不返回该字段时（限流、IPv6 不评分、额度耗尽）
+  // 一律显示「未检测」，不能再按 0 分渲染成绿色「优质」。
+  const hasScore =
+    data.fraudScore !== undefined &&
+    data.fraudScore !== null &&
+    data.fraudScore !== '' &&
+    !isNaN(Number(data.fraudScore));
+
+  const riskScore = hasScore ? Number(data.fraudScore) : null;
+  const riskScoreText = hasScore ? String(riskScore) : '--';
 
   let riskText = '高危';
   let riskColor = C.risk5;
 
-  if (riskScore <= 15) {
+  if (!hasScore) {
+    riskText = '未检测';
+    riskColor = C.muted;
+  } else if (riskScore <= 15) {
     riskText = '优质';
     riskColor = C.risk0;
   } else if (riskScore <= 25) {
@@ -189,22 +218,43 @@ export default async function(ctx) {
     risk5_poop: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0NCA0NCI+CiAgPHBhdGggZD0iTTIyLDQ0YTMzLjA5LDMzLjA5LDAsMCwxLTguNjQtMS4wNiwyMywyMywwLDAsMS02Ljg0LTNBMTQuNDksMTQuNDksMCwwLDEsMiwzNS40нгаWExMC44LDEwLjgsMCwwLDEtMS42LTUuNzIsNy42Myw3LjYzLDAsMCwxLDEuNzQtNS4xM0ExMC43MywxMC43MywwLDAsMSw3LDIxLjQ5YTEyLjMsMTIuMywwLDAsMS0uMTUtMS44OCw4LjM3LDguMzcsMCwwLDEsMS41MS0uMDksOC4wNyw4LjA3LDAsMCwxLDQuMzUtMi44OXYtLjQxMy4xMSwxMy4xMSwwLDAsMSwuODQtNSw4LjEyLDguMTIsMCwwLDEsMi44Ni0zLjQ5QTIyLjcxLDIyLjcxLDAsMCwxLDIyLDBhMTYuNjksMTYuNjksMCwwLDAsLjMzLDMuNzMsMy42NCwzLjY0LDAsMCwwLDEuMTgsMi4wOCw1LjU5LDUuNTksMCwwLDAsMi40MiwxTDI3LDdBMTEuMjMsMTEuMjMsMCwwLDEsMzIuNCw5LjI0LDUuMjgsNS4yOCwwLDAsMSwzNC42LDE0LjA5YTYsNiwwLDAsMS0uMSwxLjA1LDEwLjE3LDEwLjE3LDAsMCwxLS4yNCwxLjE1LDcsNywwLDAsMSwzLjIsMi4zOCw3LjEsNy4xLDAsMCwxLDEuMjYsMy45NCwxMCwxMCwwLDAsMSw0LDMuMjgsNy44OCw3Ljg4LDAsMCwxLDEuNDMsNC41OUExMC44LDEwLjgsMCwwLDEsNDIsMzUuNDQsMTQuNjMsMTQuNjMsMCwwLDEsMzcuNDcsNDBhMjMsMjMsMCwwLDEtNi44NSwzQTMzLDMzLDAsMCwxLDIyLDQ0Wk0xNiwyOC43NWE0LjUsNC41LDAsMCwwLDIuMzgtLjY1LDQuOTQsNC45NCwwLDAsMCwxLjcxLTEuNzIsNC42Niw0LjY2LDAsMCwwLDAtNC43NSw1LDUsMCwwLDAsLTEuNzEtMS43MSw0LjY2LDQuNjYsMCwwLDAtNC43NSwwLDQuOTQsNC45NCwwLDAsMC0xLjcyLDEuNzEsNC42Niw0LjY2LDAsMCwwLDAsNC43NUE0Ljg5LDQuODksMCwwLDAsMTMuNiwyOC4xLDQuNTQsNC41NCwwLDAsMCwxNiwyOC43NVptMC0yLjU0YTIuMiwyLjIsMCwwLDEsMC00LjQsMi4xNiwyLjE2LDAsMCwxLDEuNTYuNjQsMi4yMSwyLjIxLDAsMCwxLDAsMy4xMkExLjE5LDIuMTksMCwwLDEsMTYsMjYuMjFabTYsMTIuMzVBOC44NSw4Ljg1LDAsMCwwLDI1LDM4LjA1YTkuODcsOS44NywwLDAsMCwyLjYxLTEuMzksNy4yLDcuMjMsMCwwLDAsMS44NS0xLjk0LDMuOSwzLjksMCwwLDAsLjY5LTIuMTQsMS40NywxLjQ3LDAsMCwwLS4yNi0uOTElLjg5Ljg5LDAsMCwwLS44OC0uMjZjLTEuNDUuMTktMi42OS4zMi0zLjcyLjQxcy0yLjExLjEyLTMuMjQuMTItMi4xOSwwLTMuMjMtLjEyLTIuMjgtLjIyLTMuNzMtLjQxYS44OS44OSwwLDAsMC0uODguMjYsMS40NywxLjQ3LDAsMCwwLS4yNi45MSwzLjksMy45LDAsMCwwLC42OSwyLjE0LDcuMiw3LjIsMCwwLDAsMS44NSwxLjk0LDkuODcsOS44NywwLDAsMCwyLjYxLDEuMzlBOC44NSw4Ljg1LDAsMCwwLDIyLDM4LjU2Wm02LTkuODFhNC41Myw0LjUzLDAsMCwwLDIuMzgtLjY1LDQuOTQsNC45NCwwLDAsMCwxLjcxLTEuNzIsNC42Niw0LjY2LDAsMCwwLDAtNC43NSw1LDUsMCwwLDAsLTEuNzEtMS43MSw0LjY2LDQuNjYsMCwwLDAtNC43NSwwLDQuOTQsNC45NCwwLDAsMC0xLjcyLDEuNzEsNC42Niw0LjY2LDAsMCwwLDAsNC43NSw0Ljg5LDQuODksMCwwLDAsMS43MiwxLjcyQTQuNTQsNC41NCwwLDAsMCwyOCwyOC43NVptMC0yLjU0YTIuMTksMi4xOSwwLDAsMS0xLjU1LS42NCwyLjIsMi4yLDAsMSwxLDEuNTUuNjRaIiBmaWxsPSIjZmZmIi8+Cjwvc3ZnPg=='
   };
 
+  // 「未检测」专用图标：圆环 + 横杠
+  const UNKNOWN_ICON = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0NCA0NCI+CiAgPHBhdGggZD0iTTIyLDBBMjIsMjIsMCwxLDEsMCwyMiwyMiwyMiwwLDAsMSwyMiwwWm0wLDMuNkExOC40LDE4LjQsMCwxLDAsNDAuNCwyMiwxOC40LDE4LjQsMCwwLDAsMjIsMy42WiIgZmlsbD0iI2ZmZiIvPgogIDxyZWN0IHg9IjEyLjUiIHk9IjIwLjIiIHdpZHRoPSIxOSIgaGVpZ2h0PSIzLjYiIHJ4PSIxLjgiIGZpbGw9IiNmZmYiLz4KPC9zdmc+Cg==';
+
   let riskIcon = riskIconMap.risk5_poop;
-  if      (riskScore <= 15) riskIcon = riskIconMap.risk0_house;
+  if      (!hasScore)       riskIcon = UNKNOWN_ICON;
+  else if (riskScore <= 15) riskIcon = riskIconMap.risk0_house;
   else if (riskScore <= 25) riskIcon = riskIconMap.risk1_sparkles;
   else if (riskScore <= 40) riskIcon = riskIconMap.risk2_neutral;
   else if (riskScore <= 50) riskIcon = riskIconMap.risk3_thinking;
   else if (riskScore <= 70) riskIcon = riskIconMap.risk4_warning;
 
-  const networkText =
-    data.isResidential === true
-      ? '住宅原生'
-      : '机房网络';
+  // isResidential 缺失时不能当 false（= 机房网络），同样按「未检测」处理
+  const hasResidential = typeof data.isResidential === 'boolean';
+  const isResidential = data.isResidential === true;
 
-  const networkColor =
-    data.isResidential === true
-      ? C.green
-      : C.yellow;
+  const networkText = hasResidential
+    ? (isResidential ? '住宅原生' : '机房网络')
+    : '未检测';
+
+  const networkColor = hasResidential
+    ? (isResidential ? C.green : C.yellow)
+    : C.muted;
+
+  const hasBroadcast = typeof data.isBroadcast === 'boolean';
+  const broadcastText = hasBroadcast
+    ? (data.isBroadcast === true ? '是' : '否')
+    : '未检测';
+
+  // 底部状态栏：把原来永远绿勾的 Connection Active 换成真实来源 + 延迟
+  const STATUS = {
+    live:   { icon: 'sf-symbol:checkmark.circle.fill', color: C.green,  prefix: '实时 · ' },
+    cache:  { icon: 'sf-symbol:clock.fill',            color: C.yellow, prefix: '缓存 · ' },
+    ipasn:  { icon: 'sf-symbol:clock.fill',            color: C.yellow, prefix: '降级 · ' },
+    failed: { icon: 'sf-symbol:xmark.circle.fill',     color: C.risk5,  prefix: '' }
+  };
+  const status = STATUS[source] || STATUS.live;
+  const statusText = source === 'failed' ? '请求失败' : status.prefix + latency;
 
 
   const locationText = [
@@ -508,7 +558,7 @@ export default async function(ctx) {
                 },
                 {
                   type: 'text',
-                  text: String(riskScore),
+                  text: riskScoreText,
                   font: {
                     size: 15,
                     weight: 'bold'
@@ -604,7 +654,7 @@ export default async function(ctx) {
 
         {
           type: 'text',
-          text: data.ip || 'N/A',
+          text: maskIp(data.ip) || 'N/A',
           font: {
             size: 36,
             weight: 'bold'
@@ -642,12 +692,12 @@ export default async function(ctx) {
 
         row(
           '广播IP',
-          data.isBroadcast === true ? '是' : '否'
+          broadcastText
         ),
 
         row(
           '风险值',
-          String(riskScore),
+          riskScoreText,
           riskColor
         ),
 
@@ -663,17 +713,17 @@ export default async function(ctx) {
 
             {
               type: 'image',
-              src: 'sf-symbol:checkmark.circle.fill',
+              src: status.icon,
               width: 12,
               height: 12,
-              color: C.green
+              color: status.color
             },
 
             {
               type: 'text',
-              text: 'Connection Active',
+              text: statusText,
               font: { size: 'caption2' },
-              textColor: C.secondary
+              textColor: status.color
             }
 
           ]
@@ -793,7 +843,7 @@ export default async function(ctx) {
 
       row(
         '广播IP',
-        data.isBroadcast === true ? '是' : '否'
+        broadcastText
       ),
 
       {
@@ -815,7 +865,7 @@ export default async function(ctx) {
 
           {
             type: 'text',
-            text: String(riskScore),
+            text: riskScoreText,
             font: {
               size: 'caption1',
               weight: 'bold'
@@ -839,17 +889,17 @@ export default async function(ctx) {
 
           {
             type: 'image',
-            src: 'sf-symbol:checkmark.circle.fill',
+            src: status.icon,
             width: 12,
             height: 12,
-            color: C.green
+            color: status.color
           },
 
           {
             type: 'text',
-            text: 'Connection Active',
+            text: statusText,
             font: { size: 'caption2' },
-            textColor: C.secondary
+            textColor: status.color
           }
 
         ]
