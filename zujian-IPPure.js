@@ -770,7 +770,7 @@ export default async function(ctx) {
             },
             {
               type: 'text',
-              text: 'IPPure',
+              text: 'IP Score',
               font: { size: 18, weight: 'bold' },
               textColor: C.text
             }
@@ -905,7 +905,7 @@ export default async function(ctx) {
                 },
                 {
                   type: 'text',
-                  text: 'IPPure',
+                  text: 'IP Score',
                   font: {
                     size: 18,
                     weight: 'bold'
@@ -1053,7 +1053,7 @@ export default async function(ctx) {
 
                 {
                   type: 'text',
-                  text: 'IPPure',
+                  text: 'IP Score',
                   font: {
                     size: 'headline',
                     weight: 'bold'
@@ -1211,7 +1211,7 @@ export default async function(ctx) {
 
               {
                 type: 'text',
-                text: 'IPPure',
+                text: 'IP Score',
                 font: {
                   size: 'headline',
                   weight: 'bold'
