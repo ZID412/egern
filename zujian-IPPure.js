@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.2
+ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.3
 实时展示当前出口 IP、网络类型（住宅原生/机房网络）、地理位置，并评估 IP 风险值与欺诈等级。
 
 【环境变量配置说明】
@@ -9,7 +9,9 @@ ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.2
 名称：CF_TOKEN
 值：Cloudflare API Token（可选，配置后才会显示「人机流量比」横条）
 
-说明：人机流量比来自 Cloudflare Radar，按「ASN（运营商网络）」统计过去 7 天的human / bot 请求占比，不是针对单个 IP。Radar 接口必须带 Token 才能调用，IPPure 的公开接口本身不提供该数据。申请方式：dash.cloudflare.com -> My Profile -> API Tokens -> Create Token-> Create Custom Token -> 权限选 Account / Radar / Read（免费账号即可）同一 ASN 的数据按 12 小时缓存，命中缓存不发请求、不增加刷新耗时。
+人机流量比来自 Cloudflare Radar，可以前往CF官网免费申请
+按ASN统计过去 7 天的human / bot 请求占比，不是针对单个 IP
+
 ----------------------------------------------------------
  */
 
@@ -422,6 +424,7 @@ export default async function(ctx) {
 
   // 人机流量比横条：human 绿 / bot 红，左右两段胶囊紧贴（同订阅看板进度条画法）
   // 未配置 CF_TOKEN 或取数失败时返回空数组，不影响任何既有布局
+  // v1.0.3：标签行与横条收进同一个 gap:2 的 column 容器，两者间距不再受外层 widget 的 gap 影响
   function botClassRows(bc) {
 
     if (!bc) return [];
@@ -433,67 +436,77 @@ export default async function(ctx) {
 
       {
         type: 'stack',
-        direction: 'row',
-        alignItems: 'center',
+        direction: 'column',
+        gap: 2,
         children: [
-
-          {
-            type: 'text',
-            text: '人机流量比 · AS' + String(data.asn),
-            font: { size: 'caption2', weight: 'medium' },
-            textColor: C.muted
-          },
-
-          { type: 'spacer' },
 
           {
             type: 'stack',
             direction: 'row',
-            gap: 6,
+            alignItems: 'center',
             children: [
 
               {
                 type: 'text',
-                text: 'human ' + humanPct + '%',
+                text: '人机流量比 · AS' + String(data.asn),
                 font: { size: 'caption2', weight: 'medium' },
-                textColor: C.green
+                textColor: C.muted
               },
 
+              { type: 'spacer' },
+
               {
-                type: 'text',
-                text: 'bot ' + botPct + '%',
-                font: { size: 'caption2', weight: 'medium' },
-                textColor: C.risk5
+                type: 'stack',
+                direction: 'row',
+                gap: 6,
+                children: [
+
+                  {
+                    type: 'text',
+                    text: 'human ' + humanPct + '%',
+                    font: { size: 'caption2', weight: 'medium' },
+                    textColor: C.green
+                  },
+
+                  {
+                    type: 'text',
+                    text: 'bot ' + botPct + '%',
+                    font: { size: 'caption2', weight: 'medium' },
+                    textColor: C.risk5
+                  }
+
+                ]
               }
 
             ]
-          }
-
-        ]
-      },
-
-      {
-        type: 'stack',
-        direction: 'row',
-        alignItems: 'center',
-        gap: 0,
-        children: [
-          {
-            type: 'stack',
-            flex: Math.max(humanPct, 0.5),
-            height: 5,
-            backgroundColor: C.green,
-            borderRadius: 99,
-            children: []
           },
+
           {
             type: 'stack',
-            flex: Math.max(botPct, 0.5),
+            direction: 'row',
+            alignItems: 'center',
+            gap: 0,
             height: 5,
-            backgroundColor: C.risk5,
-            borderRadius: 99,
-            children: []
+            children: [
+              {
+                type: 'stack',
+                flex: Math.max(humanPct, 0.5),
+                height: 5,
+                backgroundColor: C.green,
+                borderRadius: 99,
+                children: []
+              },
+              {
+                type: 'stack',
+                flex: Math.max(botPct, 0.5),
+                height: 5,
+                backgroundColor: C.risk5,
+                borderRadius: 99,
+                children: []
+              }
+            ]
           }
+
         ]
       }
 
