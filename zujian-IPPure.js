@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.7
+ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.8
 实时展示当前出口 IP、网络类型（住宅原生/机房网络）、地理位置，并评估 IP 风险值与欺诈等级。
 
 【环境变量配置说明】
@@ -445,59 +445,70 @@ export default async function(ctx) {
     const humanPct = Math.round(bc.human * 10) / 10;
     const botPct = Math.round(bc.bot * 10) / 10;
 
+    // 三层收进一个 gap:2 的容器，让「标签 / 横条 / human-bot」成为一组；
+    // 与外层的间距由小尺寸根容器的 gap 统一控制，三层之间不会被拉开
     return [
 
       {
-        type: 'text',
-        text: '人机流量比 · AS' + String(data.asn),
-        font: { size: 10, weight: 'medium' },
-        textColor: C.secondary
-      },
-
-      {
         type: 'stack',
-        direction: 'row',
-        alignItems: 'center',
-        gap: 0,
-        height: 4,
+        direction: 'column',
+        gap: 2,
         children: [
-          {
-            type: 'stack',
-            flex: Math.max(humanPct, 0.5),
-            height: 4,
-            backgroundColor: C.green,
-            borderRadius: 99,
-            children: []
-          },
-          {
-            type: 'stack',
-            flex: Math.max(botPct, 0.5),
-            height: 4,
-            backgroundColor: C.risk5,
-            borderRadius: 99,
-            children: []
-          }
-        ]
-      },
 
-      {
-        type: 'stack',
-        direction: 'row',
-        children: [
           {
             type: 'text',
-            text: 'human ' + humanPct + '%',
+            text: '人机流量比 · AS' + String(data.asn),
             font: { size: 10, weight: 'medium' },
-            textColor: C.green
+            textColor: C.secondary
           },
-          { type: 'spacer' },
+
           {
-            type: 'text',
-            text: 'bot ' + botPct + '%',
-            font: { size: 10, weight: 'medium' },
-            textColor: C.risk5,
-            textAlign: 'right'
+            type: 'stack',
+            direction: 'row',
+            alignItems: 'center',
+            gap: 0,
+            height: 4,
+            children: [
+              {
+                type: 'stack',
+                flex: Math.max(humanPct, 0.5),
+                height: 4,
+                backgroundColor: C.green,
+                borderRadius: 99,
+                children: []
+              },
+              {
+                type: 'stack',
+                flex: Math.max(botPct, 0.5),
+                height: 4,
+                backgroundColor: C.risk5,
+                borderRadius: 99,
+                children: []
+              }
+            ]
+          },
+
+          {
+            type: 'stack',
+            direction: 'row',
+            children: [
+              {
+                type: 'text',
+                text: 'human ' + humanPct + '%',
+                font: { size: 10, weight: 'medium' },
+                textColor: C.green
+              },
+              { type: 'spacer' },
+              {
+                type: 'text',
+                text: 'bot ' + botPct + '%',
+                font: { size: 10, weight: 'medium' },
+                textColor: C.risk5,
+                textAlign: 'right'
+              }
+            ]
           }
+
         ]
       }
 
@@ -710,21 +721,19 @@ export default async function(ctx) {
       backgroundGradient: premiumGradient,
       border: { width: 1, color: C.borderColor },
       padding: 12,
-      gap: 3,
+      gap: 8,
 
       children: [
 
         // --- 1. IP（不要标题栏，IP 直接顶上当标题）---
+        // 字号 16pt 是宽度上限：小尺寸可用宽约 134pt，脱敏 IP 最长 15 字符，再大就会溢出
         {
           type: 'text',
           text: maskIp(data.ip) || 'N/A',
-          font: { size: 15, weight: 'bold' },
+          font: { size: 16, weight: 'bold' },
           textColor: C.text,
           maxLine: 1
         },
-
-        // IP 顶置、其余信息下移贴底，避免中间空一大块
-        { type: 'spacer' },
 
         // --- 3. 徽章行：住宅/机房 + 评分档位 ---
         {
@@ -740,36 +749,44 @@ export default async function(ctx) {
         // --- 4. 人机流量比（标签在上、human/bot 在下）---
         ...botClassRowsSmall(botClass),
 
-        // --- 5. 位置 ---
-        {
-          type: 'text',
-          text: shortLocation || 'Unknown',
-          font: { size: 10, weight: 'medium' },
-          textColor: C.secondary,
-          maxLine: 1
-        },
-
-        // --- 6. 风险值 ---
+        // --- 5. 位置 + 风险值（收进同一容器，内部 gap 2，成一组）---
         {
           type: 'stack',
-          direction: 'row',
+          direction: 'column',
+          gap: 2,
           children: [
 
             {
               type: 'text',
-              text: '风险值',
+              text: shortLocation || 'Unknown',
               font: { size: 10, weight: 'medium' },
-              textColor: C.secondary
+              textColor: C.secondary,
+              maxLine: 1
             },
 
-            { type: 'spacer' },
-
             {
-              type: 'text',
-              text: riskScoreText,
-              font: { size: 13, weight: 'bold' },
-              textColor: riskColor,
-              textAlign: 'right'
+              type: 'stack',
+              direction: 'row',
+              children: [
+
+                {
+                  type: 'text',
+                  text: '风险值',
+                  font: { size: 10, weight: 'medium' },
+                  textColor: C.secondary
+                },
+
+                { type: 'spacer' },
+
+                {
+                  type: 'text',
+                  text: riskScoreText,
+                  font: { size: 13, weight: 'bold' },
+                  textColor: riskColor,
+                  textAlign: 'right'
+                }
+
+              ]
             }
 
           ]
