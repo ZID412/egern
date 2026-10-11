@@ -18,6 +18,7 @@ ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.3
 【选填项 - 全局设置】
 - REFRESH_MINUTES：小组件刷新间隔（单位：分钟，默认 60）
 - SHOW：筛选并指定排序（如填 1,3,4 或填名字，大组件最多展示 5 个）
+- WIDGET_STYLE：小组件背景 glass = 液态玻璃透壁纸，不填默认黑色背景
 
 【协议/节点备注显示逻辑】
 - 仅填节点数 -> 显示「20节点丨今日...」
@@ -96,13 +97,14 @@ export default async function (ctx = {}) {
   }
 
   const family = normalizeFamily(ctx.widgetFamily);
+  const style = styleMode(ctx);
   // refreshAfter 跟随 REFRESH_MINUTES 环境变量（默认 60 分钟）；
   // 0:00 当日数据重置由独立的 schedule(cron) 分支负责，与刷新频率互不干扰，可各自调节。
   const refreshAfter = new Date(Date.now() + refreshMinutes(ctx) * 60 * 1000).toISOString();
   const accounts = collectAccounts(ctx, MAX_ACCOUNTS).slice(0, limitForFamily(family));
 
   if (!accounts.length) {
-    return renderEmpty(family, refreshAfter);
+    return renderEmpty(family, refreshAfter, style);
   }
 
   const results = await Promise.all(accounts.map((account) => loadTraffic(ctx, account)));
@@ -134,7 +136,7 @@ export default async function (ctx = {}) {
     return renderAccessoryRectangular(results, refreshAfter);
   }
 
-  return renderWidget(family, results, refreshAfter);
+  return renderWidget(family, results, refreshAfter, style);
 }
 
 function normalizeFamily(value) {
@@ -633,7 +635,7 @@ function withParam(url, key, value) {
   return `${base}${base.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(value)}${fragment}`;
 }
 
-function renderWidget(family, results, refreshAfter) {
+function renderWidget(family, results, refreshAfter, style) {
   const compact = family === "systemMedium";
   const small = family === "systemSmall";
   const dense = !small && results.length >= 3;
@@ -644,7 +646,7 @@ function renderWidget(family, results, refreshAfter) {
     const item = results[0];
     return {
       type: "widget",
-      backgroundGradient: palette.backgroundGradient,
+      ...rootBackground(style, palette),
       padding: [13, 15, 12, 15],
       refreshAfter,
       children: [
@@ -668,7 +670,7 @@ function renderWidget(family, results, refreshAfter) {
 
   return {
     type: "widget",
-    backgroundGradient: palette.backgroundGradient,
+    ...rootBackground(style, palette),
     padding,
     refreshAfter,
     children: [
@@ -1195,7 +1197,7 @@ function renderAccessoryRectangular(results, refreshAfter) {
   };
 }
 
-function renderEmpty(family, refreshAfter) {
+function renderEmpty(family, refreshAfter, style) {
   const palette = makePalette("#7A84E8");
   if (family.startsWith("accessory")) {
     return {
@@ -1209,7 +1211,7 @@ function renderEmpty(family, refreshAfter) {
     type: "widget",
     padding: 16,
     gap: 10,
-    backgroundGradient: palette.backgroundGradient,
+    ...rootBackground(style, palette),
     refreshAfter,
     children: [
       renderHeader([{ fetchedAt: Date.now() }], palette),
@@ -1243,6 +1245,21 @@ function makePalette(accent) {
       endPoint: { x: 1, y: 1 },
     },
   };
+}
+
+// 玻璃皮肤开关：读取 WIDGET_STYLE 环境变量
+//   glass（默认）：根容器不设置任何背景，交给 iOS 系统材质接管（iOS 26 = 液态玻璃，壁纸透出）
+//   classic      ：保留 v3.5.3 的原深色渐变背景，与旧版完全一致，可随时回退
+function styleMode(ctx) {
+  const value = String((ctx.env && ctx.env.WIDGET_STYLE) || "classic").trim().toLowerCase();
+  return value === "glass" ? "glass" : "classic";
+}
+
+// 生成根容器背景：玻璃模式返回空对象（不画背景 → 系统材质透出），
+// classic 模式返回原深色渐变。仅影响背景，不动任何流量 / 文字 / 进度条逻辑。
+function rootBackground(mode, palette) {
+  if (mode === "glass") return {};
+  return { backgroundGradient: palette.backgroundGradient };
 }
 
 function divider(palette) {
