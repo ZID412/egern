@@ -6,7 +6,7 @@ ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.14
 名称：GROUP
 值：你的策略组名称
 
-名称：WIDGET_STYLE（可能无效）
+名称：WIDGET_STYLE
 值：glass（液态玻璃透壁纸），不填默认黑色背景
 
 名称：CF_TOKEN
