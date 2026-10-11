@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.5
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.6
 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
 
 【环境变量配置说明】
@@ -1186,7 +1186,7 @@ function renderAccessoryRectangular(results, refreshAfter) {
         children: [
           { type: "text", text: percent(item.remain, item.total), font: { size: 11, family: "Menlo" } },
           { type: "spacer" },
-          { type: "text", text: formatBytes(item.total), font: { size: 11, family: "Menlo" } },
+          { type: "text", text: `(${formatBytes(item.remain)}丨${formatBytes(item.total)})`, font: { size: 11, family: "Menlo" } },
         ],
       },
       { type: "text", text: expireText, font: { size: 11, family: "Menlo" }, opacity: 0.7, maxLines: 1, minScale: 0.7 },
