@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.9
+ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.10
 实时展示当前出口 IP、网络类型（住宅原生/机房网络）、地理位置，并评估 IP 风险值与欺诈等级。
 
 【环境变量配置说明】
@@ -730,7 +730,7 @@ export default async function(ctx) {
       backgroundGradient: premiumGradient,
       border: { width: 1, color: C.borderColor },
       padding: 12,
-      gap: 5,
+      gap: 2,
 
       children: [
 
@@ -743,18 +743,22 @@ export default async function(ctx) {
             {
               type: 'image',
               src: 'sf-symbol:leaf.fill',
-              width: 13,
-              height: 13,
+              width: 16,
+              height: 16,
               color: C.green
             },
             {
               type: 'text',
               text: 'IPPure',
-              font: { size: 14, weight: 'bold' },
+              font: { size: 18, weight: 'bold' },
               textColor: C.text
             }
           ]
         },
+
+        // 4 个弹性 spacer 把剩余高度均分到各块之间 —— 光调统一 gap 做不到，
+        // 那会把「标签 / 横条 / 百分比」也一起拉开，必须用 spacer 定点分配
+        { type: 'spacer' },
 
         // --- 2. IP ---
         // 字号 16pt 是宽度上限：小尺寸可用宽约 134pt，脱敏 IP 最长 15 字符，再大就会溢出
@@ -765,6 +769,8 @@ export default async function(ctx) {
           textColor: C.text,
           maxLine: 1
         },
+
+        { type: 'spacer' },
 
         // --- 3. 徽章行：住宅/机房 + 评分档位 ---
         {
@@ -777,8 +783,12 @@ export default async function(ctx) {
           ]
         },
 
+        { type: 'spacer' },
+
         // --- 4. 人机流量比（标签在上、human/bot 在下）---
         ...botClassRowsSmall(botClass),
+
+        { type: 'spacer' },
 
         // --- 5. 位置 + 风险值（收进同一容器，内部 gap 2，成一组）---
         {
@@ -802,9 +812,11 @@ export default async function(ctx) {
               ]
             },
 
+            // 数字紧跟在「风险值」后面（gap:4，左对齐），和中尺寸的写法保持一致
             {
               type: 'stack',
               direction: 'row',
+              gap: 4,
               children: [
 
                 {
@@ -814,14 +826,11 @@ export default async function(ctx) {
                   textColor: C.secondary
                 },
 
-                { type: 'spacer' },
-
                 {
                   type: 'text',
                   text: riskScoreText,
                   font: { size: 13, weight: 'bold' },
-                  textColor: riskColor,
-                  textAlign: 'right'
+                  textColor: riskColor
                 }
 
               ]
