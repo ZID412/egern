@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.7
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.8
 按分组检测当前出口 IP 对流媒体 / AI 服务的解锁情况。
 
 【环境变量配置说明】
@@ -827,6 +827,46 @@ export default async function (ctx = {}) {
   keys.forEach(function (k, idx) {
     results[k] = applyInference(settled[idx]);
   });
+
+  // ---- 结果缓存（v1.1.8）----
+  // 每个策略组一份（键含策略组名）；单条结果各记时间、12 小时内有效。
+  // 本轮未测出的行（未知，多为超时/失败）→ 用缓存里该服务上一次的结果兜底显示（不提前获取：
+  // 只有出现未知行才会被替换使用）；本轮的有效结果写回缓存；未知不写入、不覆盖旧值。
+  const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+  const CACHE_KEY = 'unlock_cache_v1_' + String(strategyGroup || 'default');
+  const nowTs = Date.now();
+
+  const cacheItems = {};
+  try {
+    const cached = ctx.storage.getJSON(CACHE_KEY);
+    if (cached && cached.items) {
+      for (const ck in cached.items) {
+        const o = cached.items[ck];
+        if (o && o.st && o.st !== ST.UNKNOWN && (nowTs - Number(o.t || 0)) <= CACHE_TTL_MS) {
+          cacheItems[ck] = o;
+        }
+      }
+    }
+  } catch (_) {}
+
+  for (const k of keys) {
+    const r = results[k];
+    if (r && r.status !== ST.UNKNOWN) {
+      const prev = cacheItems[k];
+      cacheItems[k] = {
+        st: r.status,
+        rg: r.region || (prev && prev.rg) || '',
+        nf: r.info || '',
+        t: nowTs
+      };
+    } else if (cacheItems[k]) {
+      results[k] = result(cacheItems[k].st, cacheItems[k].rg, cacheItems[k].nf);
+    }
+  }
+
+  try {
+    ctx.storage.setJSON(CACHE_KEY, { items: cacheItems });
+  } catch (_) {}
 
   // ---- 渲染 ----
   return render({
