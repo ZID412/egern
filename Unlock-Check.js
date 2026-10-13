@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.2
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.3
 按分组检测当前出口 IP 对流媒体 / AI 服务的解锁情况。
 
 【环境变量配置说明】
@@ -9,12 +9,13 @@ ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.2
 
 【选填项】
 - 名称：CATEGORY
-值：分组名（如OTT|AI），用 | 分隔，可多选，不填默认 OTT
+值：分组名，可多选（如OTT|AI），不填默认 OTT
 
 OTT：AppleTV、Disney+、Netflix、Spotify、TikTok、YouTube
 AI：ChatGPT、Claude、Copilot、Gemini、Grok、MetaAI
+NSFW：E-Hentai、Hanime1、JavDB、JKForum、MissAV、Nhentai
 
-CATEGORY 的分组顺序直接决定小 / 中 / 大尺寸的显示顺序
+CATEGORY 的填写顺序直接决定小 / 中 / 大尺寸的显示顺序
 
 - 名称：REFRESH_MINUTES
 值：小组件刷新间隔（单位：分钟，默认 30）
@@ -112,18 +113,27 @@ const SERVICES = [
   { key: 'copilot',label: 'Copilot',      symbol: 'sf-symbol:laptopcomputer' },
   { key: 'gemini', label: 'Gemini',       symbol: 'sf-symbol:sparkle' },
   { key: 'grok',   label: 'Grok',         symbol: 'sf-symbol:bolt.fill' },
-  { key: 'meta',   label: 'MetaAI',       symbol: 'sf-symbol:infinity' }
+  { key: 'meta',   label: 'MetaAI',       symbol: 'sf-symbol:infinity' },
+  // ---- nsfw（按服务名首字母排序）----
+  { key: 'eh',     label: 'E-Hentai',     symbol: 'sf-symbol:book.fill' },
+  { key: 'hanime', label: 'Hanime1',      symbol: 'sf-symbol:play.square.fill' },
+  { key: 'javdb',  label: 'JavDB',        symbol: 'sf-symbol:list.bullet.rectangle' },
+  { key: 'jkf',    label: 'JKForum',      symbol: 'sf-symbol:text.bubble.fill' },
+  { key: 'missav', label: 'MissAV',       symbol: 'sf-symbol:play.rectangle' },
+  { key: 'nh',     label: 'Nhentai',      symbol: 'sf-symbol:book.closed.fill' }
 ];
 
 // 分组 → 服务 key 列表（每项恰好 6 个）
 const GROUPS = {
   OTT: ['atv', 'dis', 'nf', 'sp', 'tt', 'yt'],
-  AI: ['gpt', 'claude', 'copilot', 'gemini', 'grok', 'meta']
+  AI: ['gpt', 'claude', 'copilot', 'gemini', 'grok', 'meta'],
+  NSFW: ['eh', 'hanime', 'javdb', 'jkf', 'missav', 'nh']
 };
 
 const GROUP_LABELS = {
   OTT: '流媒体',
-  AI: 'AI 服务'
+  AI: 'AI 服务',
+  NSFW: 'NSFW'
 };
 
 const DEFAULT_GROUP = 'OTT';
@@ -597,6 +607,58 @@ async function checkAppleTV(ctx, policy, timeoutMs) {
 }
 
 // ============================================================
+// nsfw 组
+// ============================================================
+
+// 可访问性检测（启发式）：这些站点没有官方地区接口，判定的是「当前出口能否正常访问」——
+// 403/451 或已知封锁页 → 未解锁；正常 200/3xx → 解锁（地区用出口地区兜底）。
+// 已知边界：Cloudflare 人机校验可能把机房 IP 挡成 403，会误判为未解锁。
+async function checkNSFWByAccess(ctx, policy, timeoutMs, url, keywords) {
+  const resp = await httpGet(ctx, url, policy, timeoutMs);
+  const st = readStatus(resp);
+  const body = await readText(resp);
+  const hay = String(body).toLowerCase();
+
+  for (const kw of keywords) {
+    if (hay.indexOf(kw) !== -1) return result(ST.NO, '', '');
+  }
+  if (st === 403 || st === 451) return result(ST.NO, '', '');
+  if (st === 200 || st === 301 || st === 302) return result(ST.OK, '', '');
+  return result(ST.UNKNOWN, '', 'http ' + st);
+}
+
+// ---- E-Hentai ----
+// 被封 IP / 封锁时返回 Sad Panda 提示页
+function checkEHentai(ctx, policy, timeoutMs) {
+  return checkNSFWByAccess(ctx, policy, timeoutMs, 'https://e-hentai.org/', ['sad panda']);
+}
+
+// ---- Hanime1 ----
+function checkHanime1(ctx, policy, timeoutMs) {
+  return checkNSFWByAccess(ctx, policy, timeoutMs, 'https://hanime1.me/', []);
+}
+
+// ---- JavDB ----
+function checkJavDB(ctx, policy, timeoutMs) {
+  return checkNSFWByAccess(ctx, policy, timeoutMs, 'https://javdb.com/', []);
+}
+
+// ---- JKForum ----
+function checkJKForum(ctx, policy, timeoutMs) {
+  return checkNSFWByAccess(ctx, policy, timeoutMs, 'https://jkforum.net/', []);
+}
+
+// ---- MissAV ----
+function checkMissAV(ctx, policy, timeoutMs) {
+  return checkNSFWByAccess(ctx, policy, timeoutMs, 'https://missav.ws/', []);
+}
+
+// ---- Nhentai ----
+function checkNhentai(ctx, policy, timeoutMs) {
+  return checkNSFWByAccess(ctx, policy, timeoutMs, 'https://nhentai.net/', []);
+}
+
+// ============================================================
 // 超时兜底：按出口地区推断支持状态
 // ============================================================
 
@@ -642,7 +704,13 @@ const CHECKERS = {
   claude: checkClaude,
   copilot: checkCopilot,
   grok: checkGrok,
-  meta: checkMetaAI
+  meta: checkMetaAI,
+  eh: checkEHentai,
+  hanime: checkHanime1,
+  javdb: checkJavDB,
+  jkf: checkJKForum,
+  missav: checkMissAV,
+  nh: checkNhentai
 };
 
 // ============================================================
@@ -668,7 +736,7 @@ export default async function (ctx = {}) {
   const refreshAfter = new Date(Date.now() + refreshMinutes * 60000).toISOString();
 
   // ---- 解析 CATEGORY：分组名可多选，按书写顺序决定展示顺序 ----
-  // 只有 OTT / AI 两个分组（全大写），用 | 分隔：OTT|AI → OTT 在前，AI|OTT → AI 在前（v1.1.1）。
+  // 分组：OTT / AI / NSFW（全大写），用 | 分隔；展示顺序跟随书写（OTT|AI → OTT 在前，AI|OTT → AI 在前）。
   // 组内按服务名首字母排序；旧写法一律无效。
   const tokens = String((ctx.env && ctx.env.CATEGORY) || '')
     .split('|')
