@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.5
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.6
 按分组检测当前出口 IP 对流媒体 / AI 服务 / 各地区平台的解锁情况。
 
 【环境变量配置说明】
@@ -36,8 +36,10 @@ us：Netflix / Disney+ / HBO Max /  Hulu / Peacock / Prime Video
 - 未知（灰）：探测失败（超时、网络错误、接口变更）
 
 【重要】
-「未知」不等于「未解锁」。探测失败时一律显示灰色未知，绝不渲染成红色「未解锁」——
-那是编造结论。网络抖动和接口改版都会导致探测失败，此时应视为「没测出来」。
+探测失败（超时 / 网络错误）时，优先按出口地区 + 该服务的支持地区名单推断：
+在名单内按「解锁」显示、不在按「未解锁」显示，右侧同样显示地区；
+只有出口地区拿不到、或该服务没有名单时，才显示灰色「未知」。
+推断表示「该地区在官方支持范围内」，不保证当前 IP 未被风控，可能与实际有出入。
 
 【可靠性分级】（务必先看这条）
 - **高**：流媒体组、以及各地区组的绝大多数服务。判定依据是各服务自己的
@@ -909,6 +911,46 @@ async function checkPeacock(ctx, policy, timeoutMs) {
 }
 
 // ============================================================
+// 超时兜底：按出口地区推断支持状态
+// ============================================================
+
+// 地区型服务的支持地区白名单（小写两位地区码）。
+// 检测超时/失败时，用出口地区查这张表给出推断结论，避免整卡「未知」。
+const SUPPORT_LISTS = {
+  abema: ['jp'], nico: ['jp'], tver: ['jp'], unext: ['jp'], fod: ['jp'], dmm: ['jp'],
+  mytv: ['hk'],
+  viu: ['hk', 'mo', 'sg', 'my', 'th', 'ph', 'id', 'in', 'kh', 'vn'],
+  tvb: ['hk', 'mo', 'tw', 'sg', 'my', 'au', 'gb', 'us'],
+  nowe: ['hk'],
+  encore: ['hk', 'mo', 'tw', 'sg', 'my', 'au'],
+  viutv: ['hk'],
+  bilitw: ['tw'], '4gtv': ['tw'], linetv: ['tw'], myvideo: ['tw'], kktv: ['tw'], hami: ['tw'],
+  hulu: ['us'], peacock: ['us']
+};
+
+// 全球型流媒体的排除表：不在表内即视为支持
+const GLOBAL_BLOCK = ['cn', 'kp', 'sy', 'cu', 'ir'];
+
+// AI 组 5 项没有各自可靠的官方名单，用 OpenAI 的支持列表近似（都不含中国大陆/香港等）
+const AI_FALLBACK = ['gemini', 'claude', 'copilot', 'grok', 'pplx'];
+
+// 返回 'ok' | 'no' | null（null = 无从推断，保持未知）
+function fallbackVerdict(key, region) {
+  const r = String(region).toLowerCase();
+  if (!r) return null;
+
+  if (key === 'gpt' || AI_FALLBACK.indexOf(key) !== -1) {
+    return GPT_SUPPORT.has(r.toUpperCase()) ? 'ok' : 'no';
+  }
+
+  const list = SUPPORT_LISTS[key];
+  if (list) return list.indexOf(r) !== -1 ? 'ok' : 'no';
+
+  // 全球型流媒体（nf / dis / yt / pv / hbo / sp 等）按排除表
+  return GLOBAL_BLOCK.indexOf(r) === -1 ? 'ok' : 'no';
+}
+
+// ============================================================
 // 检测函数分发表
 // ============================================================
 
@@ -1029,12 +1071,29 @@ export default async function (ctx = {}) {
   const results = {};
   keys.forEach(function (k, idx) {
     const r = settled[idx];
+
     // 解锁但自身不带地区（AI 组 / B站等）→ 用出口地区兜底，保证每行都显示地区
     if (r.status === ST.OK && !r.region && exitRegion) {
       results[k] = result(ST.OK, exitRegion, r.info);
-    } else {
-      results[k] = r;
+      return;
     }
+
+    // 检测失败/超时 → 按出口地区查支持名单推断；无从推断时保持「未知」。
+    // 推断出的「未解锁」不带地区码 —— tail 逻辑对 NO 结果是地区码优先，
+    // 带了就会显示红色地区码而不是「未解锁」文字，语义反而不清楚。
+    if (r.status === ST.UNKNOWN && exitRegion) {
+      const verdict = fallbackVerdict(k, exitRegion);
+      if (verdict === 'ok') {
+        results[k] = result(ST.OK, exitRegion, '按地区推断');
+      } else if (verdict === 'no') {
+        results[k] = result(ST.NO, '', '按地区推断');
+      } else {
+        results[k] = r;
+      }
+      return;
+    }
+
+    results[k] = r;
   });
 
   // ---- 渲染 ----
@@ -1112,8 +1171,8 @@ function render(opts) {
 
   // 标题：单分组显示分组名，多分组显示「解锁检测」
   const titleText = opts.categories.length === 1
-    ? (GROUP_LABELS[opts.categories[0]] || '解锁检测')
-    : '解锁检测';
+    ? (GROUP_LABELS[opts.categories[0]] || 'Unlock Check')
+    : 'Unlock Check';
 
   function tail(x) {
     if (x.r.status === ST.OK) {
@@ -1128,13 +1187,9 @@ function render(opts) {
     return x.m.label;
   }
 
-  // medium 恒两列；large 超过 24 项用三列（36 项两列各 18 行在 extraLarge 上放不下）
-  const colCount = big && rows.length > 24 ? 3 : 2;
-  const perColumn = Math.ceil(rows.length / colCount);
-  const columns = [];
-  for (let i = 0; i < colCount; i++) {
-    columns.push(rows.slice(i * perColumn, (i + 1) * perColumn));
-  }
+  // 大尺寸两列：三列会把标签挤到换行截断（v1.0.5 实机问题），恒用两列
+  const perColumn = Math.ceil(rows.length / 2);
+  const columns = [rows.slice(0, perColumn), rows.slice(perColumn)];
 
   // 两列布局通用构建（medium / large 共用）；底部区域已整体移除
   function columnNode(list, labelSize, tailSize, iconSize, gap) {
