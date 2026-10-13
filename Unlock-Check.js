@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.0
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.2
 按分组检测当前出口 IP 对流媒体 / AI 服务的解锁情况。
 
 【环境变量配置说明】
@@ -8,19 +8,21 @@ ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.0
 值：你的策略组名称
 
 【选填项】
-名称：CATEGORY
-值：分组名（全大写），用 | 分隔，可多选。不填默认 OTT
+- 名称：CATEGORY
+值：分组名（如OTT|AI），用 | 分隔，可多选，不填默认 OTT
 
 OTT：AppleTV、Disney+、Netflix、Spotify、TikTok、YouTube
-AI：ChatGPT、Claude、Copilot、Gemini、Grok、Pplx
+AI：ChatGPT、Claude、Copilot、Gemini、Grok、MetaAI
 
-名称：REFRESH_MINUTES
+CATEGORY 的分组顺序直接决定小 / 中 / 大尺寸的显示顺序
+
+- 名称：REFRESH_MINUTES
 值：小组件刷新间隔（单位：分钟，默认 30）
 
-名称：TIMEOUT
+- 名称：TIMEOUT
 值：单个请求超时（单位：毫秒，默认 1800）
 
-名称：WIDGET_STYLE
+- 名称：WIDGET_STYLE
 值：glass（液态玻璃），不填默认黑色背景
 
 【状态含义】
@@ -110,13 +112,13 @@ const SERVICES = [
   { key: 'copilot',label: 'Copilot',      symbol: 'sf-symbol:laptopcomputer' },
   { key: 'gemini', label: 'Gemini',       symbol: 'sf-symbol:sparkle' },
   { key: 'grok',   label: 'Grok',         symbol: 'sf-symbol:bolt.fill' },
-  { key: 'pplx',   label: 'Pplx',         symbol: 'sf-symbol:magnifyingglass' }
+  { key: 'meta',   label: 'MetaAI',       symbol: 'sf-symbol:infinity' }
 ];
 
 // 分组 → 服务 key 列表（每项恰好 6 个）
 const GROUPS = {
   OTT: ['atv', 'dis', 'nf', 'sp', 'tt', 'yt'],
-  AI: ['gpt', 'claude', 'copilot', 'gemini', 'grok', 'pplx']
+  AI: ['gpt', 'claude', 'copilot', 'gemini', 'grok', 'meta']
 };
 
 const GROUP_LABELS = {
@@ -529,12 +531,51 @@ function checkGrok(ctx, policy, timeoutMs) {
   ]);
 }
 
-function checkPerplexity(ctx, policy, timeoutMs) {
-  return checkAIByKeywords(ctx, 'https://www.perplexity.ai/', policy, timeoutMs, [
-    'not available in your region',
-    'unsupported region',
-    'not available in your country'
-  ]);
+// ---- MetaAI ----
+// 判定移植自 oneclickvirt/UnlockTests（transnation/MetaAI.go）：
+// 请求 www.meta.ai/ajax —— 400/404 = 区域支持（可访问）；200 = 被地区页接管 → 未解锁；
+// 403 或其它状态码再看主页：GeoBlockedErrorRoot → 未解锁，Abra 主页标记 → 解锁（尝试从 code 取地区）。
+async function checkMetaAI(ctx, policy, timeoutMs) {
+  const headers = Object.assign({}, BROWSER_HEADERS, { 'accept-language': 'en-US,en;q=0.9' });
+
+  const resp = await httpGet(ctx, 'https://www.meta.ai/ajax', policy, timeoutMs, { headers: headers });
+  const st = readStatus(resp);
+
+  if (st === 400 || st === 404) return result(ST.OK, '', '');
+  if (st === 200) return result(ST.NO, '', '');
+
+  const home = await httpGet(ctx, 'https://www.meta.ai/', policy, timeoutMs, { headers: headers });
+  const hs = readStatus(home);
+  if (hs === 0) return result(ST.UNKNOWN, '', 'network');
+
+  const hb = await readText(home);
+  if (st === 403) return result(ST.OK, regionFromMetaCode(hb), '');
+
+  if (hb.indexOf('GeoBlockedErrorRoot') !== -1) return result(ST.NO, '', 'GeoBlocked');
+  if (
+    hb.indexOf('AbraHomeRoot.react') !== -1 ||
+    hb.indexOf('AbraHomeRootConversationQuery') !== -1 ||
+    hb.indexOf('HomeRootQuery') !== -1 ||
+    hb.indexOf('AbraRateLimitedErrorRoot') !== -1 ||
+    hb.indexOf('KadabraRootContainer') !== -1
+  ) {
+    return result(ST.OK, regionFromMetaCode(hb), '');
+  }
+  if (hs === 200) return result(ST.OK, '', '');
+  return result(ST.UNKNOWN, '', 'http ' + st + '/' + hs);
+}
+
+// 从 Meta 页面 "code":"xx_YY" 里取地区（en_US → us）；取不到返回空
+function regionFromMetaCode(body) {
+  const m = String(body).match(/"code"\s*:\s*"([^"]*)"/);
+  if (!m) return '';
+  const code = m[1];
+  if (code.indexOf('_') !== -1) {
+    const parts = code.split('_');
+    if (parts.length >= 2 && /^[A-Za-z]{2}$/.test(parts[1])) return parts[1].toLowerCase();
+    return '';
+  }
+  return code.length < 10 && /^[A-Za-z]{2}$/.test(code) ? code.toLowerCase() : '';
 }
 
 // ---- Apple TV+（显示 AppleTV）----
@@ -567,7 +608,7 @@ const SUPPORT_LISTS = {};
 const GLOBAL_BLOCK = ['cn', 'kp', 'sy', 'cu', 'ir'];
 
 // AI 组 5 项没有各自可靠的官方名单，用 OpenAI 的支持列表近似（都不含中国大陆/香港等）
-const AI_FALLBACK = ['gemini', 'claude', 'copilot', 'grok', 'pplx'];
+const AI_FALLBACK = ['gemini', 'claude', 'copilot', 'grok', 'meta'];
 
 // 返回 'ok' | 'no' | null（null = 无从推断，保持未知）
 function fallbackVerdict(key, region) {
@@ -601,7 +642,7 @@ const CHECKERS = {
   claude: checkClaude,
   copilot: checkCopilot,
   grok: checkGrok,
-  pplx: checkPerplexity
+  meta: checkMetaAI
 };
 
 // ============================================================
@@ -626,9 +667,9 @@ export default async function (ctx = {}) {
 
   const refreshAfter = new Date(Date.now() + refreshMinutes * 60000).toISOString();
 
-  // ---- 解析 CATEGORY：分组名可多选 ----
-  // 只有 OTT / AI 两个分组（全大写），用 | 分隔可多选。
-  // 展示固定 OTT 在前、AI 在后（v1.1.0），组内按服务名首字母排序；旧写法一律无效。
+  // ---- 解析 CATEGORY：分组名可多选，按书写顺序决定展示顺序 ----
+  // 只有 OTT / AI 两个分组（全大写），用 | 分隔：OTT|AI → OTT 在前，AI|OTT → AI 在前（v1.1.1）。
+  // 组内按服务名首字母排序；旧写法一律无效。
   const tokens = String((ctx.env && ctx.env.CATEGORY) || '')
     .split('|')
     .map(function (s) { return s.trim(); })
@@ -638,11 +679,11 @@ export default async function (ctx = {}) {
   let keys = [];
 
   if (tokens.length) {
-    // 按 GROUPS 的固定顺序（OTT → AI）收集，不随书写顺序变化
-    for (const name of Object.keys(GROUPS)) {
-      if (tokens.indexOf(name) === -1) continue;
-      groups.push(name);
-      for (const k of GROUPS[name]) {
+    // 按 CATEGORY 书写顺序收集（v1.1.1），组内保持首字母排序；重复分组只保留首次
+    for (const t of tokens) {
+      if (!GROUPS[t]) continue;
+      if (groups.indexOf(t) === -1) groups.push(t);
+      for (const k of GROUPS[t]) {
         if (keys.indexOf(k) === -1) keys.push(k);
       }
     }
@@ -1137,9 +1178,9 @@ function render(opts) {
     };
   }
 
-  // ---- systemLarge / systemExtraLarge（单列放大版，v1.1.0）----
-  // 全部 12 项只占一列，不需要再为「两列各 18 行」压缩字号：
-  // 字号整体放大到高于 medium，每行显示该服务的检测耗时（ms）。
+  // ---- systemLarge / systemExtraLarge（单列版，v1.1.2）----
+  // 单列最多容纳 18 行（当前 12 项 + 为后续分组预留）：字号按 18 行收敛，
+  // 标题行保持大字号不变；每行显示该服务的检测耗时（ms）。
   return {
     type: 'widget',
     ...rootBackground(style, gradient),
@@ -1156,10 +1197,10 @@ function render(opts) {
           { type: 'image', src: 'sf-symbol:play.tv.fill', width: 18, height: 18, color: C.ok },
           { type: 'text', text: titleText, font: { size: 18, weight: 'bold' }, textColor: C.text },
           { type: 'spacer' },
-          { type: 'text', text: timeText(), font: { size: 12, weight: 'medium' }, textColor: C.muted, maxLines: 1 }
+          { type: 'text', text: timeText(), font: { size: 11, weight: 'medium' }, textColor: C.muted, maxLines: 1 }
         ]
       },
-      { ...columnNode(rows, 16, 15, 16, 4, 13), flex: 1 },
+      { ...columnNode(rows, 13, 12, 13, 2, 11), flex: 1 },
       {
         type: 'stack',
         direction: 'row',
@@ -1167,7 +1208,7 @@ function render(opts) {
         gap: 8,
         children: [
           unlockBar(okCount, total, C.ok, C.no, 7),
-          { type: 'text', text: okCount + '/' + total, font: { size: 13, weight: 'bold' }, textColor: C.text, maxLines: 1 }
+          { type: 'text', text: okCount + '/' + total, font: { size: 12, weight: 'bold' }, textColor: C.text, maxLines: 1 }
         ]
       }
     ]
