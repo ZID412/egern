@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.3
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.4
 按分组检测当前出口 IP 对流媒体 / AI 服务的解锁情况。
 
 【环境变量配置说明】
@@ -441,18 +441,25 @@ async function checkTikTok(ctx, policy, timeoutMs) {
 // ---- 出口地区查询 ----
 // 读 Cloudflare trace 拿出口地区码。与各服务检测并行执行，
 // 给所有自身不带地区信息的解锁结果（AI 组等）做展示兜底。
+// 主端点失败自动换备用 trace 端点重试一次（v1.1.4），尽量不出现解锁行显示 --。
+const EXIT_TRACE_URLS = [
+  'https://chat.openai.com/cdn-cgi/trace',
+  'https://www.cloudflare.com/cdn-cgi/trace'
+];
 async function getExitRegion(ctx, policy, timeoutMs) {
-  const trace = await httpGet(ctx, 'https://chat.openai.com/cdn-cgi/trace', policy, timeoutMs);
-  const ts = await readText(trace);
-  const i = ts.indexOf('loc=');
-  if (i === -1) return result(ST.UNKNOWN, '', 'no loc');
+  for (const url of EXIT_TRACE_URLS) {
+    try {
+      const ts = await readText(await httpGet(ctx, url, policy, timeoutMs));
+      const i = ts.indexOf('loc=');
+      if (i === -1) continue;
 
-  const rest = ts.slice(i + 4);
-  const nl = rest.indexOf('\n');
-  const loc = (nl === -1 ? rest : rest.slice(0, nl)).trim().toUpperCase();
-  if (!loc) return result(ST.UNKNOWN, '', 'empty loc');
-
-  return result(ST.OK, loc, '');
+      const rest = ts.slice(i + 4);
+      const nl = rest.indexOf('\n');
+      const loc = (nl === -1 ? rest : rest.slice(0, nl)).trim().toUpperCase();
+      if (loc) return result(ST.OK, loc, '');
+    } catch (_) {}
+  }
+  return result(ST.UNKNOWN, '', 'no loc');
 }
 
 // ---- ChatGPT（可靠性高）----
@@ -803,7 +810,6 @@ export default async function (ctx = {}) {
 
   const isLarge = widgetFamily === 'systemLarge' || widgetFamily === 'systemExtraLarge';
   const results = {};
-  const timings = {};
 
   if (isLarge) {
     // ---- 大尺寸：按组串行，组内并发 ----
@@ -826,18 +832,15 @@ export default async function (ctx = {}) {
 
       const groupTasks = groupKeys.map(function (key) {
         const fn = CHECKERS[key];
-        const t0 = Date.now();
         return safeCheck(function () { return fn(ctx, strategyGroup, LARGE_TIMEOUT_MS); }).then(function (r) {
-          const ms = Date.now() - t0;
-          if (Date.now() > overallDeadline) return { r: result(ST.UNKNOWN, '', 'budget'), ms: ms };
-          return { r: r, ms: ms };
+          if (Date.now() > overallDeadline) return result(ST.UNKNOWN, '', 'budget');
+          return r;
         });
       });
 
       const settled = await Promise.all(groupTasks);
       groupKeys.forEach(function (k, idx) {
-        results[k] = applyInference(settled[idx].r, k);
-        timings[k] = settled[idx].ms;
+        results[k] = applyInference(settled[idx], k);
       });
     }
   } else {
@@ -847,18 +850,15 @@ export default async function (ctx = {}) {
 
     const tasks = keys.map(function (key) {
       const fn = CHECKERS[key];
-      const t0 = Date.now();
       return safeCheck(function () { return fn(ctx, strategyGroup, timeoutMs); }).then(function (r) {
-        const ms = Date.now() - t0;
-        if (Date.now() > deadline) return { r: result(ST.UNKNOWN, '', 'budget'), ms: ms };
-        return { r: r, ms: ms };
+        if (Date.now() > deadline) return result(ST.UNKNOWN, '', 'budget');
+        return r;
       });
     });
 
     const settled = await Promise.all(tasks);
     keys.forEach(function (k, idx) {
-      results[k] = applyInference(settled[idx].r, k);
-      timings[k] = settled[idx].ms;
+      results[k] = applyInference(settled[idx], k);
     });
   }
 
@@ -869,7 +869,6 @@ export default async function (ctx = {}) {
     refreshAfter: refreshAfter,
     list: list,
     results: results,
-    timings: timings,
     group: strategyGroup,
     categories: groups,
     exitRegion: exitRegion
@@ -933,7 +932,6 @@ function render(opts) {
   const results = opts.results;
   const group = opts.group;
   const exitRegion = opts.exitRegion || '';
-  const timings = opts.timings || {};
 
   const list = opts.list.slice(0, limitForFamily(family));
   const big = family === 'systemLarge' || family === 'systemExtraLarge';
@@ -970,7 +968,7 @@ function render(opts) {
 
   const rows = list.map(function (s) {
     const r = results[s.key] || result(ST.UNKNOWN, '', '');
-    return { service: s, r: r, m: meta(r), ms: timings[s.key] };
+    return { service: s, r: r, m: meta(r) };
   });
 
   const total = opts.list.length;
@@ -1003,18 +1001,17 @@ function render(opts) {
   const columns = [rows.slice(0, perColumn), rows.slice(perColumn)];
 
   // 列布局通用构建（medium 两列 / large 单列共用）
-  function columnNode(list, labelSize, tailSize, iconSize, gap, msSize) {
+  function columnNode(list, labelSize, tailSize, iconSize, gap) {
     return {
       type: 'stack',
       direction: 'column',
       gap: gap,
-      children: list.map(function (x) { return rowNode(x, labelSize, tailSize, iconSize, true, msSize); })
+      children: list.map(function (x) { return rowNode(x, labelSize, tailSize, iconSize, true); })
     };
   }
 
-  // 单行：图标 + 名称 + [耗时ms] + 状态图标 + 地区/状态文案。
-  // msSize 仅大尺寸传入（v1.1.0）：耗时显示在状态图标前，≤100ms 绿色、>100ms 黄色。
-  function rowNode(x, labelSize, tailSize, iconSize, showServiceIcon, msSize) {
+  // 单行：图标 + 名称 + 状态图标 + 地区/状态文案。
+  function rowNode(x, labelSize, tailSize, iconSize, showServiceIcon) {
     const children = [];
 
     if (showServiceIcon) {
@@ -1037,16 +1034,6 @@ function render(opts) {
 
     children.push({ type: 'spacer' });
 
-    if (msSize) {
-      children.push({
-        type: 'text',
-        text: msLabel(x),
-        font: { size: msSize, weight: 'medium' },
-        textColor: msColor(x),
-        maxLines: 1
-      });
-    }
-
     children.push({
       type: 'image',
       src: x.m.symbol,
@@ -1063,15 +1050,6 @@ function render(opts) {
     });
 
     return { type: 'stack', direction: 'row', gap: 6, children: children };
-  }
-
-  // 耗时文案与颜色（未测量 → -- 灰色）
-  function msLabel(x) {
-    return typeof x.ms === 'number' ? Math.round(x.ms) + 'ms' : '--';
-  }
-  function msColor(x) {
-    if (typeof x.ms !== 'number') return C.muted;
-    return x.ms <= 100 ? C.ok : C.warn;
   }
 
   // ---- accessoryInline ----
@@ -1247,8 +1225,8 @@ function render(opts) {
   }
 
   // ---- systemLarge / systemExtraLarge（单列版，v1.1.2）----
-  // 单列最多容纳 18 行（当前 12 项 + 为后续分组预留）：字号按 18 行收敛，
-  // 标题行保持大字号不变；每行显示该服务的检测耗时（ms）。
+  // 单列最多容纳 18 行（三组全选 6+6+6 正好放满）：字号按 18 行收敛，
+  // 标题行保持大字号不变。
   return {
     type: 'widget',
     ...rootBackground(style, gradient),
@@ -1268,7 +1246,7 @@ function render(opts) {
           { type: 'text', text: timeText(), font: { size: 11, weight: 'medium' }, textColor: C.muted, maxLines: 1 }
         ]
       },
-      { ...columnNode(rows, 13, 12, 13, 2, 11), flex: 1 },
+      { ...columnNode(rows, 13, 12, 13, 2), flex: 1 },
       {
         type: 'stack',
         direction: 'row',
