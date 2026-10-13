@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.2
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.3
 按分组检测当前出口 IP 对流媒体 / AI 服务 / 各地区平台的解锁情况。
 
 【环境变量配置说明】
@@ -9,7 +9,8 @@ ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.2
 
 【选填项】
 名称：CATEGORY
-值：分组名，逗号分隔，可多选。不填默认 streaming
+值：分组名，用 | 分隔，可多选。不填默认 streaming
+    示例：jp   或   hk|tw   或   streaming|ai|jp|us
 
 streaming：Netflix / Disney+ / YouTube /  Prime Video / HBO Max / Spotify
 ai：ChatGPT / Gemini / Claude / Copilot / Grok / Perplexity
@@ -964,7 +965,7 @@ export default async function (ctx = {}) {
 
   // ---- 解析 CATEGORY：分组名可多选，按书写顺序去重 ----
   const tokens = String((ctx.env && ctx.env.CATEGORY) || '')
-    .split(',')
+    .split('|')
     .map(function (s) { return s.trim().toLowerCase(); })
     .filter(Boolean);
 
@@ -992,7 +993,9 @@ export default async function (ctx = {}) {
   }).filter(Boolean);
 
   // ---- 缓存读取 ----
-  const cacheKey = 'unlock_' + strategyGroup;
+  // 缓存 key 带上分组（排序后拼接，保证 jp|tw 与 tw|jp 命中同一份）。
+  // 不分组的话，切换 CATEGORY 时新分组会覆盖旧分组的缓存，来回切就永远命中不上。
+  const cacheKey = 'unlock_' + strategyGroup + '_' + groups.slice().sort().join('-');
   const CACHE_TTL = cacheMinutes * 60000;
   let results = null;
   let cached = false;
@@ -1135,7 +1138,8 @@ function render(opts) {
     return x.m.label;
   }
 
-  const footerText = group + (opts.cached ? ' · 缓存' : '');
+  // 底部只保留缓存标记，不再显示策略组名
+  const footerText = opts.cached ? '缓存' : '';
 
   // 单行：图标 + 名称 + 状态。wide 控制是否显示服务自身图标
   function rowNode(x, labelSize, tailSize, iconSize, showServiceIcon) {
@@ -1304,15 +1308,19 @@ function render(opts) {
           gap: 5,
           children: rows.map(function (x) { return rowNode(x, 12, 11, 12, false); })
         },
-        { type: 'spacer' },
-        {
-          type: 'stack',
-          direction: 'row',
-          children: [
-            { type: 'text', text: footerText, font: { size: 9, weight: 'medium' }, textColor: C.muted, maxLine: 1 },
-            { type: 'spacer' }
-          ]
-        }
+        ...(footerText
+          ? [
+              { type: 'spacer' },
+              {
+                type: 'stack',
+                direction: 'row',
+                children: [
+                  { type: 'text', text: footerText, font: { size: 9, weight: 'medium' }, textColor: C.muted, maxLine: 1 },
+                  { type: 'spacer' }
+                ]
+              }
+            ]
+          : [])
       ]
     };
   }
@@ -1349,15 +1357,19 @@ function render(opts) {
           gap: 6,
           children: rows.map(function (x) { return rowNode(x, 13, 12, 14, true); })
         },
-        { type: 'spacer' },
-        {
-          type: 'stack',
-          direction: 'row',
-          children: [
-            { type: 'text', text: footerText, font: { size: 10, weight: 'medium' }, textColor: C.muted, maxLine: 1 },
-            { type: 'spacer' }
-          ]
-        }
+        ...(footerText
+          ? [
+              { type: 'spacer' },
+              {
+                type: 'stack',
+                direction: 'row',
+                children: [
+                  { type: 'text', text: footerText, font: { size: 10, weight: 'medium' }, textColor: C.muted, maxLine: 1 },
+                  { type: 'spacer' }
+                ]
+              }
+            ]
+          : [])
       ]
     };
   }
@@ -1367,7 +1379,9 @@ function render(opts) {
   // 强行分两列会让画面左右各几条，显得很空。
   const useTwoColumns = rows.length > 12;
   const half = Math.ceil(rows.length / 2);
-  const leftRows = rows.slice(0, half);
+  // 单列时左列必须是完整列表。v1.0.2 写成 rows.slice(0, half)，
+  // 导致大尺寸只选 1 个分组（6 项）时只渲染出前 3 项 —— 实机 bug。
+  const leftRows = useTwoColumns ? rows.slice(0, half) : rows;
   const rightRows = useTwoColumns ? rows.slice(half) : [];
 
   function columnNode(list) {
@@ -1414,15 +1428,19 @@ function render(opts) {
             ]
           : [{ ...columnNode(leftRows), flex: 1 }]
       },
-      { type: 'spacer' },
-      {
-        type: 'stack',
-        direction: 'row',
-        children: [
-          { type: 'text', text: footerText, font: { size: 10, weight: 'medium' }, textColor: C.muted, maxLine: 1 },
-          { type: 'spacer' }
-        ]
-      }
+      ...(footerText
+        ? [
+            { type: 'spacer' },
+            {
+              type: 'stack',
+              direction: 'row',
+              children: [
+                { type: 'text', text: footerText, font: { size: 10, weight: 'medium' }, textColor: C.muted, maxLine: 1 },
+                { type: 'spacer' }
+              ]
+            }
+          ]
+        : [])
     ]
   };
 }
