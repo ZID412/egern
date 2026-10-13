@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.10
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.11
 按分组检测当前出口 IP 对流媒体 / AI 服务 / 各地区平台的解锁情况。
 
 【环境变量配置说明】
@@ -9,14 +9,14 @@ ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.10
 
 【选填项】
 名称：CATEGORY
-值：分组名，用 | 分隔，可多选。不填默认 streaming
+值：分组名（全大写），用 | 分隔，可多选。不填默认 OTT（流媒体）
 
-streaming：Netflix / Disney+ / YouTube /  Prime Video / HBO Max / Spotify
-ai：ChatGPT / Gemini / Claude / Copilot / Grok / Perplexity
-jp：Abema / niconico / TVer / U-NEXT / FOD / DMM
-hk：myTV SUPER / Viu / TVB / now E / encoreTVB / ViuTV
-tw：B站台湾 / 4GTV / LINE TV / MyVideo / KKTV / Hami Video
-us：Hulu / Peacock / FuboTV / AppleTV / Tubi / Starz
+OTT：Netflix / Disney+ / YouTube / Prime Video / HBO Max / Spotify
+AI：ChatGPT / Gemini / Claude / Copilot / Grok / Perplexity
+JP：Abema / Niconico / TVer / U-NEXT / FOD / DMM
+HK：MyTV SUPER / Viu / TVB / Now E / EncoreTVB / ViuTV
+TW：B站台湾 / 4GTV / LINE TV / MyVideo / KKTV / Hami Video
+US：Hulu / Peacock / FuboTV / AppleTV / Tubi / Starz
 
 名称：REFRESH_MINUTES
 值：小组件刷新间隔（单位：分钟，默认 30）
@@ -127,17 +127,17 @@ const SERVICES = [
   { key: 'pplx',   label: 'Pplx',         symbol: 'sf-symbol:magnifyingglass' },
   // ---- jp ----
   { key: 'abema',  label: 'Abema',        symbol: 'sf-symbol:antenna.radiowaves.left.and.right' },
-  { key: 'nico',   label: 'niconico',     symbol: 'sf-symbol:video.fill' },
+  { key: 'nico',   label: 'Niconico',     symbol: 'sf-symbol:video.fill' },
   { key: 'tver',   label: 'TVer',         symbol: 'sf-symbol:rectangle.on.rectangle' },
   { key: 'unext',  label: 'U-NEXT',       symbol: 'sf-symbol:square.stack' },
   { key: 'fod',    label: 'FOD',          symbol: 'sf-symbol:film' },
   { key: 'dmm',    label: 'DMM',          symbol: 'sf-symbol:bag.fill' },
   // ---- hk ----
-  { key: 'mytv',   label: 'myTV',         symbol: 'sf-symbol:desktopcomputer' },
+  { key: 'mytv',   label: 'MyTV',         symbol: 'sf-symbol:desktopcomputer' },
   { key: 'viu',    label: 'Viu',          symbol: 'sf-symbol:tv' },
   { key: 'tvb',    label: 'TVB',          symbol: 'sf-symbol:tv.inset.filled' },
-  { key: 'nowe',   label: 'now E',        symbol: 'sf-symbol:circle.grid.2x2' },
-  { key: 'encore', label: 'encore',       symbol: 'sf-symbol:repeat' },
+  { key: 'nowe',   label: 'Now E',        symbol: 'sf-symbol:circle.grid.2x2' },
+  { key: 'encore', label: 'Encore',       symbol: 'sf-symbol:repeat' },
   { key: 'viutv',  label: 'ViuTV',        symbol: 'sf-symbol:play.rectangle' },
   // ---- tw ----
   { key: 'bilitw', label: 'B站 台湾',      symbol: 'sf-symbol:play.square.fill' },
@@ -150,31 +150,31 @@ const SERVICES = [
   { key: 'hulu',   label: 'Hulu',         symbol: 'sf-symbol:display' },
   { key: 'peacock',label: 'Peacock',      symbol: 'sf-symbol:leaf.fill' },
   { key: 'fubo',   label: 'FuboTV',       symbol: 'sf-symbol:sportscourt.fill' },
-  { key: 'atv',    label: 'AppleTV',      symbol: 'sf-symbol:airplay.video.fill' },
+  { key: 'atv',    label: 'AppleTV',      symbol: 'sf-symbol:appletv.fill' },
   { key: 'tubi',   label: 'Tubi',         symbol: 'sf-symbol:play.circle' },
   { key: 'starz',  label: 'Starz',        symbol: 'sf-symbol:star.fill' }
 ];
 
 // 分组 → 服务 key 列表（每项恰好 6 个）
 const GROUPS = {
-  streaming: ['nf', 'dis', 'yt', 'pv', 'hbo', 'sp'],
-  ai: ['gpt', 'gemini', 'claude', 'copilot', 'grok', 'pplx'],
-  jp: ['abema', 'nico', 'tver', 'unext', 'fod', 'dmm'],
-  hk: ['mytv', 'viu', 'tvb', 'nowe', 'encore', 'viutv'],
-  tw: ['bilitw', '4gtv', 'linetv', 'myvideo', 'kktv', 'hami'],
-  us: ['hulu', 'peacock', 'fubo', 'atv', 'tubi', 'starz']
+  OTT: ['nf', 'dis', 'yt', 'pv', 'hbo', 'sp'],
+  AI: ['gpt', 'gemini', 'claude', 'copilot', 'grok', 'pplx'],
+  JP: ['abema', 'nico', 'tver', 'unext', 'fod', 'dmm'],
+  HK: ['mytv', 'viu', 'tvb', 'nowe', 'encore', 'viutv'],
+  TW: ['bilitw', '4gtv', 'linetv', 'myvideo', 'kktv', 'hami'],
+  US: ['hulu', 'peacock', 'fubo', 'atv', 'tubi', 'starz']
 };
 
 const GROUP_LABELS = {
-  streaming: '流媒体',
-  ai: 'AI 服务',
-  jp: '日本',
-  hk: '香港',
-  tw: '台湾',
-  us: '美国'
+  OTT: '流媒体',
+  AI: 'AI 服务',
+  JP: '日本',
+  HK: '香港',
+  TW: '台湾',
+  US: '美国'
 };
 
-const DEFAULT_GROUP = 'streaming';
+const DEFAULT_GROUP = 'OTT';
 
 // ============================================================
 // 工具函数
@@ -1054,9 +1054,11 @@ export default async function (ctx = {}) {
   const refreshAfter = new Date(Date.now() + refreshMinutes * 60000).toISOString();
 
   // ---- 解析 CATEGORY：分组名可多选，按书写顺序去重 ----
+  // 分组名全大写：OTT / AI / JP / HK / TW / US，用 | 分隔可多选。
+  // 仅识别新分组名，旧写法（单字母 s/a/j/h/t/u、全拼 streaming/ai/jp/hk/tw/us）一律无效。
   const tokens = String((ctx.env && ctx.env.CATEGORY) || '')
     .split('|')
-    .map(function (s) { return s.trim().toLowerCase(); })
+    .map(function (s) { return s.trim(); })
     .filter(Boolean);
 
   const groups = [];
@@ -1097,31 +1099,11 @@ export default async function (ctx = {}) {
     exitRegion = String((loc && loc.region) || '').toLowerCase();
   } catch (_) {}
 
-  // ---- 并发探测 ----
-  // 全部服务并发探测，整体预算统一 4 秒：超预算的按上面拿到的出口地区推断，保证刷新够快。
-  // 单请求 TIMEOUT 默认 1800ms，两段串行（Netflix / Disney）也能在 4 秒内收口。
-  const TOTAL_BUDGET_MS = 4000;
-  const deadline = Date.now() + TOTAL_BUDGET_MS;
-
-  const tasks = keys.map(function (key) {
-    const fn = CHECKERS[key];
-    return safeCheck(function () { return fn(ctx, strategyGroup, timeoutMs); }).then(function (r) {
-      // 预算耗尽后仍未返回的，标记「未知」，后续按出口地区推断
-      if (Date.now() > deadline) return result(ST.UNKNOWN, '', 'budget');
-      return r;
-    });
-  });
-
-  const settled = await Promise.all(tasks);
-
-  const results = {};
-  keys.forEach(function (k, idx) {
-    const r = settled[idx];
-
+  // 统一应用出口地区兜底 + 超时推断
+  function applyInference(r, k) {
     // 解锁但自身不带地区（AI 组 / B站等）→ 用出口地区兜底，保证每行都显示地区
     if (r.status === ST.OK && !r.region && exitRegion) {
-      results[k] = result(ST.OK, exitRegion, r.info);
-      return;
+      return result(ST.OK, exitRegion, r.info);
     }
 
     // 检测失败/超时 → 按出口地区查支持名单推断。
@@ -1130,15 +1112,66 @@ export default async function (ctx = {}) {
     if (r.status === ST.UNKNOWN && exitRegion) {
       const verdict = fallbackVerdict(k, exitRegion);
       if (verdict === 'ok') {
-        results[k] = result(ST.OK, exitRegion, '按地区推断');
-        return;
+        return result(ST.OK, exitRegion, '按地区推断');
       }
-      results[k] = r;
-      return;
     }
 
-    results[k] = r;
-  });
+    return r;
+  }
+
+  const isLarge = widgetFamily === 'systemLarge' || widgetFamily === 'systemExtraLarge';
+  const results = {};
+
+  if (isLarge) {
+    // ---- 大尺寸：按组串行，组内并发 ----
+    // 每组单请求 5 秒，整体最长 20 秒。避免 36 个请求同时淹没代理，
+    // 也避免单组代理抖动把全部请求拖成未知。
+    const LARGE_TIMEOUT_MS = 5000;
+    const OVERALL_DEADLINE_MS = 20000;
+    const overallDeadline = Date.now() + OVERALL_DEADLINE_MS;
+
+    for (const g of groups) {
+      const groupKeys = keys.filter(function (k) { return GROUPS[g].indexOf(k) !== -1; });
+      if (!groupKeys.length) continue;
+
+      if (Date.now() > overallDeadline) {
+        for (const k of groupKeys) {
+          if (!(k in results)) results[k] = applyInference(result(ST.UNKNOWN, '', 'budget'), k);
+        }
+        continue;
+      }
+
+      const groupTasks = groupKeys.map(function (key) {
+        const fn = CHECKERS[key];
+        return safeCheck(function () { return fn(ctx, strategyGroup, LARGE_TIMEOUT_MS); }).then(function (r) {
+          if (Date.now() > overallDeadline) return result(ST.UNKNOWN, '', 'budget');
+          return r;
+        });
+      });
+
+      const settled = await Promise.all(groupTasks);
+      groupKeys.forEach(function (k, idx) {
+        results[k] = applyInference(settled[idx], k);
+      });
+    }
+  } else {
+    // ---- 中小尺寸：全部并发，整体预算 4 秒 ----
+    const TOTAL_BUDGET_MS = 4000;
+    const deadline = Date.now() + TOTAL_BUDGET_MS;
+
+    const tasks = keys.map(function (key) {
+      const fn = CHECKERS[key];
+      return safeCheck(function () { return fn(ctx, strategyGroup, timeoutMs); }).then(function (r) {
+        if (Date.now() > deadline) return result(ST.UNKNOWN, '', 'budget');
+        return r;
+      });
+    });
+
+    const settled = await Promise.all(tasks);
+    keys.forEach(function (k, idx) {
+      results[k] = applyInference(settled[idx], k);
+    });
+  }
 
   // ---- 渲染 ----
   return render({
