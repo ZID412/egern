@@ -1,0 +1,1428 @@
+/*
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.2
+按分组检测当前出口 IP 对流媒体 / AI 服务 / 各地区平台的解锁情况。
+
+【环境变量配置说明】
+【必填项】
+名称：GROUP
+值：你的策略组名称
+
+【选填项】
+名称：CATEGORY
+值：分组名，逗号分隔，可多选。不填默认 streaming
+
+streaming：Netflix / Disney+ / YouTube /  Prime Video / HBO Max / Spotify
+ai：ChatGPT / Gemini / Claude / Copilot / Grok / Perplexity
+jp：Abema / niconico / TVer / U-NEXT / FOD / DMM
+hk：myTV SUPER / Viu / TVB / now E / encoreTVB / ViuTV
+tw：B站台湾 / 4GTV / LINE TV / MyVideo / KKTV / Hami Video
+us：Netflix / Disney+ / HBO Max /  Hulu / Peacock / Prime Video
+
+名称：REFRESH_MINUTES
+值：小组件刷新间隔（单位：分钟，默认 30）
+
+名称：CACHE_MINUTES
+值：检测结果缓存时长（单位：分钟，默认 10，填 0 关闭缓存）
+
+名称：TIMEOUT
+值：单个请求超时（单位：毫秒，默认 2500）
+
+名称：WIDGET_STYLE
+值：glass（液态玻璃透壁纸），不填默认黑色背景
+
+【状态含义】
+- 解锁（绿）：该服务在当前出口可用，右侧显示地区码
+- 未解锁（红）：服务可达，但当前地区不支持
+- 受限（黄）：部分可用（Netflix 仅自制剧 / ChatGPT 限流 / Abema 海外限定）
+- 封锁（红）：IP 被服务方拉黑（Netflix 403 / OpenAI VPN 拦截）
+- 未知（灰）：探测失败（超时、网络错误、接口变更）
+
+【重要】
+「未知」不等于「未解锁」。探测失败时一律显示灰色未知，绝不渲染成红色「未解锁」——
+那是编造结论。网络抖动和接口改版都会导致探测失败，此时应视为「没测出来」。
+
+【可靠性分级】（务必先看这条）
+- **高**：流媒体组、以及各地区组的绝大多数服务。判定依据是各服务自己的
+  地区校验接口（返回码 / 地区字段 / 明确的限制文案），与 MediaUnlockTest 一致。
+- **中**：Disney+（依赖公开流传的 refresh_token）、Spotify（依赖公开流传的 key）、
+  niconico（判定只看页面是否含「同じ地域」文案，属弱特征）。
+  这几个失效后会显示「未知」，需要更新常量。
+- **较低**：ai 组里除 ChatGPT 外的 5 项（Gemini / Claude / Copilot / Grok / Perplexity）。
+  MediaUnlockTest 里没有这些服务的实现，判定用的是「地区限制关键词匹配」的启发式方法，
+  **未经过多地区真实验证**。它们可能显示「未知」，也可能出现误判，请当作参考而非结论。
+  ChatGPT 例外：它走 cdn-cgi/trace 取出口地区 + OpenAI 官方支持国家列表，可靠性高。
+
+【已知未做】
+Hulu Japan —— 原实现判定依据是「跟随跳转后最终 URL 是否以 restrict.html 结尾」，
+而 Egern 的 Response 对象不暴露最终 URL（只有 status/headers/body），脚本里拿不到。
+
+----------------------------------------------------------
+ */
+
+// ============================================================
+// 常量区
+// ============================================================
+
+// 探测请求统一伪装成桌面 Chrome。
+// 这些服务会校验请求头，缺少 sec-ch-ua / sec-fetch-* 等指纹头时可能直接返回异常页，
+// 导致误判成「未解锁」。整套头与 MediaUnlockTest 的 GET() 保持一致。
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36';
+
+// Abema 走安卓客户端接口，必须用 Dalvik UA，用浏览器头会被拒
+const DALVIK_UA = 'Dalvik/2.1.0 (Linux; U; Android 9; ALP-AL00 Build/HUAWEIALP-AL00)';
+
+const BROWSER_HEADERS = {
+  'user-agent': BROWSER_UA,
+  accept:
+    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+  'cache-control': 'no-cache',
+  dnt: '1',
+  pragma: 'no-cache',
+  'sec-ch-ua': '"Chromium";v="106", "Google Chrome";v="106", "Not;A=Brand";v="99"',
+  'sec-ch-ua-mobile': '?0',
+  'sec-ch-ua-platform': 'Windows',
+  'sec-fetch-dest': 'document',
+  'sec-fetch-mode': 'navigate',
+  'sec-fetch-site': 'none',
+  'sec-fetch-user': '?1',
+  'upgrade-insecure-requests': '1'
+};
+
+// Disney+ 设备令牌（公开流传值，失效后 Disney+ 会显示「未知」）
+const DISNEY_AUTH =
+  'Bearer ZGlzbmV5JmJyb3dzZXImMS4wLjA.Cu56AgSfBTDag5NiRA81oLHkDZfu5L3CKadnefEAY84';
+
+const DISNEY_REFRESH =
+  'eyJ6aXAiOiJERUYiLCJraWQiOiJLcTYtNW1Ia3BxOXdzLUtsSUUyaGJHYkRIZFduRjU3UjZHY1h6aFlvZi04IiwiY3R5IjoiSldUIiwiZW5jIjoiQzIwUCIsImFsZyI6ImRpciJ9..OdwL8TEIFZouLDJe.wLz6zEC3PlPAGxx4X4qyP837lUbFrI_DQGnrJDMtEaQd5gsjHwaYshscoDXCYjMioU8JvsH_HKZga3fzSDEoWuMA5lgv4dyJpoB4Cqi91JjPSkqsRHKZ1I-nRoTmnSkcW3RHE-0coAqDWgK7IZ5cPiHQ-9KVRqqZkmTbEHynBdgH2y-FJP8zK0-dAynzR2krlUahhcykp7J7VqhZj_l5HVZZkPylZ6eKoK4J8fQvuGJoqMaRZTzrIH4Yk9J3GMbKnYqEG3SKRp5qAuWTtqLDOoGN0wWsUE5VRuCZxRKpxayJWABq2u4ABkAtIqUx8CPx77ZXxZVlcjRN1Xa8F2-e2mTxZq_1FgzmWECFg6onkDj_TpfBdeFoxDzhnRNceoQ-iyyNf3sgxJ_nz_bwztVZf0Vt3OR8yBnXfbkuEY7GQ4pvCuy-peW0mwJJCd2eJ9ADwDEGmoY4F47W-8rxdBhgna-0hu0FuLxt9MlmH_tGCmM_T-61xsxymLO9tlkwBnxNw4u6T9X2hcvC7-4uzr5cJiaJ3sGPMNo_ixTrP8SG9zCIse-X6_Lq0v3Uo-QOKhcD4N3gIfwZFYEvf-HVGWzFpU683q9CJfTTEXhsufj1URhSis7GdAa3nLZVt7CScsMPcYrMI317PmU-Brdvl_Ic4QeHTeF8-57kzD3mm5mrlQ7kQIXQzzQPqHYt70MzxL_scfT90cpYaSOBQnB1l--226h7X51XxSbrOcO-25zS7OSyedya8eMG6zAmgkk1zvZUzdCHZyzYD8-t0KYcfA5AwiLIFHxgqL4ni9fVy-SpYTKRwCmkp_pZOPaFwJh8zkhw8QaSLHq7ubko7H1kjJZxzsG1l4Bla1QRlj_-FVoY8GZ6okFk3Ts6A2qOK6v8UT7sL_w2zaHDQH1q2o05vsLwqIOxg3Xyey0tahzPbl-In_i1JGGvqGXOiPcKL5uOcTOo1luk32AbCS9i5mkopTS401YYYMH-Sx_krW_VJd2czpFefc0dlagtzBytqlcyscscFwq6IE6VHwG2Ij-WfO44G5hGDJFkZMZLeDUnTIyNrLe9hcfJp73koOSFnURsFWFjM2lgUIayiREAl02oh2alUyqnG09gdXufT_2W0DjA4i7qYuv6ol5NIVc389dF3x4a_7dPBvsMU3ppA1rlV04FlK6_fRv-Dk_jclXRZiQ5ul2ZO2CQ96LmrzmkdeNxFxcwaNXCJGBiRWXfMunoddIRg_LrVGuqWRgxj4DEnngZ2-qI_dliGiYraIehsHvtWeXIUWNF_FQSnQgZLg4WPekcluCecE4Iv7Sz36k9GUDqqs8hRWddirhufYem6RC84PyNqafCnwczrx5pOacmVzDl9Oi8OIhdDasdJa7gvsDoFzf6bv5st7EvbORkgPs6MK46mDMlwkL7TqjrJnSJzozCX4zLbYeyiWK6EXCehOpImMN262KLYQxnf5ugvk11gIA4NXpTbzyo4hp2LS7u8UMs5_w3t02vizxSQGokp-3qkEWmViy3pup1IXMPrcpS6KWHX0AYi1oRDZB5B8vM04pRHwYjsgMp2L-w4PMaDC4QDRU81IdvQ5VRkyLT7CL5hDlq5smXw_7wSFTWxs9vc5PmnrykSAkwFPocORC2j4T96uiu3z4gNoBu_dwKNcPi-dV7myC4iRRTmpm0V5A9IW510RGTyso_b-1hUeGvToYl9VwNgN7Impt3PjEQO2HXMU3p96tdulDEA_8bbyPdEGfxxVK3k2n_dxj_GzPKA8V4ESoNMRrV1vCuxPnrzfAOhqmNOEewTHqlxENSsZFGvfzVj1KemR7zLky14JMVslILnvxl6vuX7SbfIQ5JDktq9qKtTKo1mFrA-mBS3n00FacjPi364nnugiWQN7EwhNdEDH_KtWXGZVh-u2NM5cdoS1kAsOKSLxFTnTDG738LhoB3i_ZOjHFASKiZcsX6yD5csIP21jG5nFF9Qw2qsnqmxRuDLilIoGczEMt2Pfo180CG8Dyr7XtOYNeVU7__h9zBm9CvaAHDoQQhU4KlXM4LsljFeajw5f2wn08OmsdfkSYYl45O718QgzR_RRqwDpQH2pyKDJZ9yZt5OCyxcbnCgepjUyp6S-Pigfw73ASoCknhLLheb2mqkWIC-s3NmClpMoK-IyE57AiHHCatZfPGPnNofVioN5SbVR08mV7pdyQEhQGxGFM_LTAFFpwC48gOFTq-FWdV58muDULTqO3ImbGG6X3vV-PVbher1oJx0CFnelGGIx9lwM-yHbpVZGq9IXnKqoblCHiwuaJgbCKBnTjia2gYPNlN0Ql1ia3vQc7bybDVHyLePAVbOk10MdwHprwMGE__wsXqagElQCGJpU3ytPDktncRPCSQBQ3mw94CCIOQYEyhnA1Vik127AznwbR10Xm59diGBtix0Ao-VIrjKzQNw2hXqC_H-IgY46OT5ZndZ02SAe6AVyipq6kTui_ZyuQhy-zAOiat4t6qh-LyL1xImBuOZ7e79737LYiLHEIgHOIQ68DKcSmsIuA.gwrRhM5AiYUQ6iAbRZhxlw';
+
+// ChatGPT 官方支持的地区码集合（与 MediaUnlockTest 的 GPT_SUPPORT_COUNTRY 一致）
+const GPT_SUPPORT = new Set([
+  'AL', 'DZ', 'AD', 'AO', 'AG', 'AR', 'AM', 'AU', 'AT', 'AZ', 'BS', 'BD', 'BB', 'BE',
+  'BZ', 'BJ', 'BT', 'BA', 'BW', 'BR', 'BG', 'BF', 'CV', 'CA', 'CL', 'CO', 'KM', 'CR',
+  'HR', 'CY', 'DK', 'DJ', 'DM', 'DO', 'EC', 'SV', 'EE', 'FJ', 'FI', 'FR', 'GA', 'GM',
+  'GE', 'DE', 'GH', 'GR', 'GD', 'GT', 'GN', 'GW', 'GY', 'HT', 'HN', 'HU', 'IS', 'IN',
+  'ID', 'IQ', 'IE', 'IL', 'IT', 'JM', 'JP', 'JO', 'KZ', 'KE', 'KI', 'KW', 'KG', 'LV',
+  'LB', 'LS', 'LR', 'LI', 'LT', 'LU', 'MG', 'MW', 'MY', 'MV', 'ML', 'MT', 'MH', 'MR',
+  'MU', 'MX', 'MC', 'MN', 'ME', 'MA', 'MZ', 'MM', 'NA', 'NR', 'NP', 'NL', 'NZ', 'NI',
+  'NE', 'NG', 'MK', 'NO', 'OM', 'PK', 'PW', 'PA', 'PG', 'PE', 'PH', 'PL', 'PT', 'QA',
+  'RO', 'RW', 'KN', 'LC', 'VC', 'WS', 'SM', 'ST', 'SN', 'RS', 'SC', 'SL', 'SG', 'SK',
+  'SI', 'SB', 'ZA', 'ES', 'LK', 'SR', 'SE', 'CH', 'TH', 'TG', 'TO', 'TT', 'TN', 'TR',
+  'TV', 'UG', 'AE', 'US', 'UY', 'VU', 'ZM', 'BO', 'BN', 'CG', 'CZ', 'VA', 'FM', 'MD',
+  'PS', 'KR', 'TW', 'TZ', 'TL', 'GB'
+]);
+
+// TVer / encoreTVB 都走 Brightcove 播放接口，需要在 Accept 里带各自的公钥
+const TVER_ACCEPT =
+  'application/json;pk=BCpkADawqM0_rzsjsYbC1k1wlJLU4HiAtfzjxdUmfvvLUQB-Ax6VA-p-9wOEZbCEm3u95qq2Y1CQQW1K9tPaMma9iAqUqhpISCmyXrgnlpx9soEmoVNuQpiyGsTpePGumWxSs1YoKziYB6Wz';
+
+const ENCORE_ACCEPT =
+  'application/json;pk=BCpkADawqM2Gpjj8SlY2mj4FgJJMfUpxTNtHWXOItY1PvamzxGstJbsgc-zFOHkCVcKeeOhPUd9MNHEGJoVy1By1Hrlh9rOXArC5M5MTcChJGU6maC8qhQ4Y8W-QYtvi8Nq34bUb9IOvoKBLeNF4D9Avskfe9rtMoEjj6ImXu_i4oIhYS0dx7x1AgHvtAaZFFhq3LBGtR-ZcsSqxNzVg-4PRUI9zcytQkk_YJXndNSfhVdmYmnxkgx1XXisGv1FG5GOmEK4jZ_Ih0riX5icFnHrgniADr4bA2G7TYh4OeGBrYLyFN_BDOvq3nFGrXVWrTLhaYyjxOr4rZqJPKK2ybmMsq466Ke1ZtE-wNQ';
+
+// 状态枚举
+const ST = {
+  OK: 'ok',
+  NO: 'no',
+  RESTRICTED: 'restricted',
+  BANNED: 'banned',
+  UNKNOWN: 'unknown'
+};
+
+// ============================================================
+// 服务与分组
+// ============================================================
+
+const SERVICES = [
+  // ---- streaming ----
+  { key: 'nf',     label: 'Netflix',      symbol: 'sf-symbol:tv.fill' },
+  { key: 'dis',    label: 'Disney+',      symbol: 'sf-symbol:sparkles' },
+  { key: 'yt',     label: 'YouTube',      symbol: 'sf-symbol:play.rectangle.fill' },
+  { key: 'pv',     label: 'Prime Video',  symbol: 'sf-symbol:play.circle.fill' },
+  { key: 'hbo',    label: 'HBO Max',      symbol: 'sf-symbol:film.fill' },
+  { key: 'sp',     label: 'Spotify',      symbol: 'sf-symbol:music.note' },
+  // ---- ai ----
+  { key: 'gpt',    label: 'ChatGPT',      symbol: 'sf-symbol:bubble.left.fill' },
+  { key: 'gemini', label: 'Gemini',       symbol: 'sf-symbol:sparkle' },
+  { key: 'claude', label: 'Claude',       symbol: 'sf-symbol:bubble.left.and.bubble.right.fill' },
+  { key: 'copilot',label: 'Copilot',      symbol: 'sf-symbol:laptopcomputer' },
+  { key: 'grok',   label: 'Grok',         symbol: 'sf-symbol:bolt.fill' },
+  { key: 'pplx',   label: 'Perplexity',   symbol: 'sf-symbol:magnifyingglass' },
+  // ---- jp ----
+  { key: 'abema',  label: 'Abema',        symbol: 'sf-symbol:antenna.radiowaves.left.and.right' },
+  { key: 'nico',   label: 'niconico',     symbol: 'sf-symbol:video.fill' },
+  { key: 'tver',   label: 'TVer',         symbol: 'sf-symbol:rectangle.on.rectangle' },
+  { key: 'unext',  label: 'U-NEXT',       symbol: 'sf-symbol:square.stack' },
+  { key: 'fod',    label: 'FOD',          symbol: 'sf-symbol:film' },
+  { key: 'dmm',    label: 'DMM',          symbol: 'sf-symbol:bag.fill' },
+  // ---- hk ----
+  { key: 'mytv',   label: 'myTV SUPER',   symbol: 'sf-symbol:desktopcomputer' },
+  { key: 'viu',    label: 'Viu',          symbol: 'sf-symbol:tv' },
+  { key: 'tvb',    label: 'TVB Anywhere', symbol: 'sf-symbol:tv.inset.filled' },
+  { key: 'nowe',   label: 'now E',        symbol: 'sf-symbol:circle.grid.2x2' },
+  { key: 'encore', label: 'encoreTVB',    symbol: 'sf-symbol:repeat' },
+  { key: 'viutv',  label: 'ViuTV',        symbol: 'sf-symbol:play.rectangle' },
+  // ---- tw ----
+  { key: 'bilitw', label: 'B站 台湾',      symbol: 'sf-symbol:play.square.fill' },
+  { key: '4gtv',   label: '4GTV',         symbol: 'sf-symbol:square.grid.2x2' },
+  { key: 'linetv', label: 'LINE TV',      symbol: 'sf-symbol:message.fill' },
+  { key: 'myvideo',label: 'MyVideo',      symbol: 'sf-symbol:play.rectangle' },
+  { key: 'kktv',   label: 'KKTV',         symbol: 'sf-symbol:play.square' },
+  { key: 'hami',   label: 'Hami Video',   symbol: 'sf-symbol:antenna.radiowaves.left.and.right' },
+  // ---- us ----
+  { key: 'hulu',   label: 'Hulu',         symbol: 'sf-symbol:display' },
+  { key: 'peacock',label: 'Peacock',      symbol: 'sf-symbol:leaf.fill' }
+];
+
+// 分组 → 服务 key 列表（每项恰好 6 个）
+const GROUPS = {
+  streaming: ['nf', 'dis', 'yt', 'pv', 'hbo', 'sp'],
+  ai: ['gpt', 'gemini', 'claude', 'copilot', 'grok', 'pplx'],
+  jp: ['abema', 'nico', 'tver', 'unext', 'fod', 'dmm'],
+  hk: ['mytv', 'viu', 'tvb', 'nowe', 'encore', 'viutv'],
+  tw: ['bilitw', '4gtv', 'linetv', 'myvideo', 'kktv', 'hami'],
+  us: ['nf', 'dis', 'hbo', 'hulu', 'peacock', 'pv']
+};
+
+const GROUP_LABELS = {
+  streaming: '流媒体',
+  ai: 'AI 服务',
+  jp: '日本',
+  hk: '香港',
+  tw: '台湾',
+  us: '美国'
+};
+
+const DEFAULT_GROUP = 'streaming';
+
+// ============================================================
+// 工具函数
+// ============================================================
+
+function styleMode(ctx) {
+  const value = String((ctx && ctx.env && ctx.env.WIDGET_STYLE) || 'classic').trim().toLowerCase();
+  return value === 'glass' ? 'glass' : 'classic';
+}
+
+function rootBackground(mode, gradient) {
+  if (mode === 'glass') return {};
+  return { backgroundGradient: gradient };
+}
+
+// 读取响应头：兼容 Headers 对象与测试用的普通对象
+function readHeader(headers, name) {
+  if (!headers) return '';
+  try {
+    if (typeof headers.get === 'function') {
+      const v = headers.get(name);
+      return v === null || v === undefined ? '' : String(v);
+    }
+    const lower = String(name).toLowerCase();
+    for (const k of Object.keys(headers)) {
+      if (String(k).toLowerCase() === lower) return String(headers[k] || '');
+    }
+  } catch (_) {}
+  return '';
+}
+
+// 从 set-cookie 里取指定 cookie 的值
+function readCookie(headers, name) {
+  const raw = readHeader(headers, 'set-cookie');
+  if (!raw) return '';
+  try {
+    const re = new RegExp('(?:^|[;,\\s])' + name + '=([^;,]*)');
+    const m = String(raw).match(re);
+    if (m && m[1]) return String(m[1]).trim();
+  } catch (_) {}
+  return '';
+}
+
+async function readText(resp) {
+  try {
+    if (resp && typeof resp.text === 'function') return String((await resp.text()) || '');
+  } catch (_) {}
+  return '';
+}
+
+async function readJson(resp) {
+  try {
+    if (resp && typeof resp.json === 'function') return await resp.json();
+  } catch (_) {}
+  return null;
+}
+
+function readStatus(resp) {
+  const n = Number(resp && resp.status);
+  return isFinite(n) ? n : 0;
+}
+
+function result(status, region, info) {
+  return {
+    status: status || ST.UNKNOWN,
+    region: region ? String(region) : '',
+    info: info ? String(info) : ''
+  };
+}
+
+// 统一 GET：默认浏览器头 + 跟随重定向，extra 可覆盖
+async function httpGet(ctx, url, policy, timeoutMs, extra) {
+  const opt = Object.assign(
+    { policy: policy, timeout: timeoutMs, headers: BROWSER_HEADERS },
+    extra || {}
+  );
+  return ctx.http.get(url, opt);
+}
+
+// 统一 POST
+async function httpPost(ctx, url, policy, timeoutMs, body, headers, redirect) {
+  return ctx.http.post(url, {
+    policy: policy,
+    timeout: timeoutMs,
+    headers: headers || BROWSER_HEADERS,
+    body: body,
+    redirect: redirect || 'follow'
+  });
+}
+
+function jsonHeaders() {
+  return { 'user-agent': BROWSER_UA, 'content-type': 'application/json' };
+}
+
+function formHeaders() {
+  return { 'user-agent': BROWSER_UA, 'content-type': 'application/x-www-form-urlencoded' };
+}
+
+// 任何探测异常一律降级为「未知」，绝不渲染成「未解锁」
+async function safeCheck(fn) {
+  try {
+    const r = await fn();
+    if (r && r.status) return r;
+    return result(ST.UNKNOWN, '', 'empty');
+  } catch (_) {
+    return result(ST.UNKNOWN, '', 'error');
+  }
+}
+
+// ============================================================
+// streaming 组
+// ============================================================
+
+// ---- Netflix ----
+// 两个片源页都 404 = 仅自制剧；都 403 = IP 被封；
+// 任一 200/301 再去试探页读 location 头里的地区码。
+// 必须 redirect:'manual' —— 跟随重定向就拿不到 location 了。
+async function checkNetflix(ctx, policy, timeoutMs) {
+  const opt = { redirect: 'manual' };
+
+  const pair = await Promise.all([
+    httpGet(ctx, 'https://www.netflix.com/title/81280792', policy, timeoutMs, opt),
+    httpGet(ctx, 'https://www.netflix.com/title/70143836', policy, timeoutMs, opt)
+  ]);
+
+  const s1 = readStatus(pair[0]);
+  const s2 = readStatus(pair[1]);
+
+  if (s1 === 404 && s2 === 404) return result(ST.RESTRICTED, '', '仅自制剧');
+  if (s1 === 403 && s2 === 403) return result(ST.BANNED, '', 'IP 被封');
+
+  if (s1 === 200 || s1 === 301 || s2 === 200 || s2 === 301) {
+    const resp3 = await httpGet(ctx, 'https://www.netflix.com/title/80018499', policy, timeoutMs, opt);
+    const loc = readHeader(resp3 && resp3.headers, 'location');
+
+    if (!loc) return result(ST.OK, 'us', '');
+
+    // location 形如 https://www.netflix.com/hk-en/title/... → 取第 4 段再截掉 -xx 后缀
+    const parts = String(loc).split('/');
+    if (parts.length < 5) return result(ST.UNKNOWN, '', 'bad location');
+    const seg = String(parts[3] || '').split('-')[0];
+    if (!seg) return result(ST.UNKNOWN, '', 'bad region');
+    return result(ST.OK, seg.toLowerCase(), '');
+  }
+
+  return result(ST.UNKNOWN, '', 'unexpected ' + s1 + '/' + s2);
+}
+
+// ---- Disney+ ----
+// 先向官网 POST 设备令牌拿 Location / x-dss-country cookie 判断地区，
+// 再向 bamgrid 令牌端点验证令牌在当前地区是否可用。
+async function checkDisney(ctx, policy, timeoutMs) {
+  const body =
+    'grant_type=refresh_token' +
+    '&refresh_token=' + encodeURIComponent(DISNEY_REFRESH) +
+    '&subject_token_type=' + encodeURIComponent('urn:bamtech:params:oauth:token-type:device');
+
+  const headers = {
+    'user-agent': BROWSER_UA,
+    authorization: DISNEY_AUTH,
+    'content-type': 'application/x-www-form-urlencoded'
+  };
+
+  const q = await httpPost(ctx, 'https://www.disneyplus.com', policy, timeoutMs, body, headers, 'manual');
+  const location = readHeader(q && q.headers, 'location');
+
+  let queryRegion = '';
+  if (!location) {
+    queryRegion = readCookie(q && q.headers, 'x-dss-country').toLowerCase();
+  } else if (location === 'https://disneyplus.disney.co.jp/') {
+    queryRegion = 'jp';
+  } else if (location === 'https://preview.disneyplus.com/unavailable/') {
+    return result(ST.NO, '', '地区不支持');
+  } else {
+    return result(ST.NO, '', '地区不支持');
+  }
+
+  const v = await httpPost(
+    ctx, 'https://disney.api.edge.bamgrid.com/token', policy, timeoutMs, body, headers, 'manual'
+  );
+
+  const vb = await readText(v);
+  if (!vb) return result(ST.UNKNOWN, queryRegion, 'empty body');
+  if (vb.indexOf('unauthorized') !== -1) return result(ST.UNKNOWN, queryRegion, '令牌失效');
+  if (vb.indexOf('403 ERROR') !== -1 || vb.indexOf('forbidden-location') !== -1) {
+    return result(ST.NO, queryRegion, '地区不支持');
+  }
+
+  return result(ST.OK, queryRegion, '');
+}
+
+// ---- YouTube ----
+// 标签显示为 YouTube，检测的是 Premium 区域可用性（普通播放几乎全区可用，测了没意义）
+async function checkYouTube(ctx, policy, timeoutMs) {
+  const resp = await httpGet(ctx, 'https://www.youtube.com/premium', policy, timeoutMs);
+
+  const s = await readText(resp);
+  if (!s) return result(ST.UNKNOWN, '', 'empty body');
+
+  if (s.indexOf('www.google.cn') !== -1) return result(ST.NO, 'cn', '中国大陆');
+  if (s.indexOf('Premium is not available in your country') !== -1) {
+    return result(ST.NO, '', '地区不支持');
+  }
+
+  // 从冒号处向后取一小段再正则匹配两位地区码。
+  // 不按固定偏移截取 —— 页面里偶尔会写成 "countryCode": "JP"（冒号后带空格），
+  // 定长截取会把空格和引号一起截进来，得到 "J 这种残缺值。
+  const i = s.indexOf('"countryCode":');
+  if (i !== -1) {
+    const after = s.slice(i + 13, i + 40);
+    const m = after.match(/^[:\s"]*([A-Za-z]{2})/);
+    if (m && m[1]) return result(ST.OK, m[1].toLowerCase(), '');
+  }
+
+  if (
+    s.indexOf('premiumPurchaseButton') !== -1 ||
+    s.indexOf('manageSubscriptionButton') !== -1 ||
+    s.indexOf('/月') !== -1 ||
+    s.indexOf('/month') !== -1
+  ) {
+    return result(ST.OK, '', '');
+  }
+
+  return result(ST.NO, '', '');
+}
+
+// ---- Prime Video ----
+async function checkPrimeVideo(ctx, policy, timeoutMs) {
+  const resp = await httpGet(ctx, 'https://www.primevideo.com', policy, timeoutMs);
+  const s = await readText(resp);
+  if (!s) return result(ST.UNKNOWN, '', 'empty body');
+
+  const i = s.indexOf('"currentTerritory":');
+  if (i === -1) return result(ST.NO, '', '');
+
+  const code = s.slice(i + 20, i + 22).replace(/[^A-Za-z]/g, '').toLowerCase();
+  if (!code) return result(ST.UNKNOWN, '', 'bad region');
+  return result(ST.OK, code, '');
+}
+
+// ---- Spotify ----
+// 向注册接口发固定表单，用返回的 status 判断该地区是否开通
+async function checkSpotify(ctx, policy, timeoutMs) {
+  const body =
+    'birth_day=11&birth_month=11&birth_year=2000&collect_personal_info=undefined&creation_flow=' +
+    '&creation_point=https%3A%2F%2Fwww.spotify.com%2Fhk-en%2F&displayname=Gay%20Lord&gender=male' +
+    '&iagree=1&key=a1e486e2729f46d6bb368d6b2bcda326&platform=www&referrer=&send-email=0' +
+    '&thirdpartyemail=0&identifier_token=AgE6YTvEzkReHNfJpO114514';
+
+  const headers = {
+    'accept-language': 'en',
+    'user-agent': BROWSER_UA,
+    'content-type': 'application/json',
+    'cache-control': 'no-cache'
+  };
+
+  const resp = await httpPost(
+    ctx, 'https://spclient.wg.spotify.com/signup/public/v1/account', policy, timeoutMs, body, headers
+  );
+
+  const b = await readJson(resp);
+  if (!b) return result(ST.UNKNOWN, '', 'bad json');
+
+  const st = Number(b.status);
+  if (st === 320) return result(ST.NO, '', '');
+  if (st === 311 && b.is_country_launched) {
+    return result(ST.OK, String(b.country || '').toLowerCase(), '');
+  }
+  return result(ST.NO, '', '');
+}
+
+// ---- HBO Max ----
+async function checkHBOMax(ctx, policy, timeoutMs) {
+  const resp = await httpGet(ctx, 'https://www.hbomax.com/', policy, timeoutMs, { redirect: 'manual' });
+
+  const s = await readText(resp);
+  if (s && s.indexOf('geo-availability') !== -1) return result(ST.NO, '', '');
+
+  const loc = readHeader(resp && resp.headers, 'location');
+  const parts = String(loc).split('/');
+  const region = parts.length >= 4 ? String(parts[3] || '') : '';
+  if (!region) return result(ST.UNKNOWN, '', 'no region');
+
+  return result(ST.OK, region.toUpperCase(), '');
+}
+
+// ============================================================
+// ai 组
+// ============================================================
+
+// ---- ChatGPT（可靠性高）----
+// 先读 cdn-cgi/trace 的 loc 拿到出口地区，再查 OpenAI 官方支持国家列表
+async function checkChatGPT(ctx, policy, timeoutMs) {
+  const trace = await httpGet(ctx, 'https://chat.openai.com/cdn-cgi/trace', policy, timeoutMs);
+
+  const ts = await readText(trace);
+  const i = ts.indexOf('loc=');
+  if (i === -1) return result(ST.UNKNOWN, '', 'no loc');
+
+  const rest = ts.slice(i + 4);
+  const nl = rest.indexOf('\n');
+  const loc = (nl === -1 ? rest : rest.slice(0, nl)).trim().toUpperCase();
+  if (!loc) return result(ST.UNKNOWN, '', 'empty loc');
+
+  const home = await httpGet(ctx, 'https://chat.openai.com', policy, timeoutMs);
+  const body = await readText(home);
+
+  if (body && body.indexOf('VPN') !== -1) return result(ST.BANNED, loc, 'VPN 拦截');
+  if (readStatus(home) === 429) return result(ST.RESTRICTED, loc, '限流');
+
+  if (GPT_SUPPORT.has(loc)) return result(ST.OK, loc, '');
+  return result(ST.NO, loc, '地区不支持');
+}
+
+// ---- AI 服务通用检测（启发式，可靠性较低）----
+// MediaUnlockTest 里没有这些服务的实现，这里用「地区限制关键词匹配」的启发式方法：
+// 请求服务主页，若响应体或跳转地址里出现地区限制文案 → 未解锁；正常返回 200/3xx → 解锁。
+// 关键词来自各家公开的地区限制提示语，未经多地区真实验证，可能误判或显示未知。
+async function checkAIByKeywords(ctx, url, policy, timeoutMs, keywords) {
+  const resp = await httpGet(ctx, url, policy, timeoutMs);
+
+  const body = await readText(resp);
+  const loc = readHeader(resp && resp.headers, 'location');
+  const hay = (String(body) + ' ' + String(loc)).toLowerCase();
+
+  for (const kw of keywords) {
+    if (hay.indexOf(String(kw).toLowerCase()) !== -1) {
+      return result(ST.NO, '', '地区不支持');
+    }
+  }
+
+  const st = readStatus(resp);
+  if (st === 200 || st === 301 || st === 302 || st === 0) return result(ST.OK, '', '');
+
+  return result(ST.UNKNOWN, '', 'status ' + st);
+}
+
+function checkGemini(ctx, policy, timeoutMs) {
+  return checkAIByKeywords(ctx, 'https://gemini.google.com/', policy, timeoutMs, [
+    'unsupported_country',
+    'not available in your country',
+    'unsupported region',
+    'is not available in your region'
+  ]);
+}
+
+function checkClaude(ctx, policy, timeoutMs) {
+  return checkAIByKeywords(ctx, 'https://claude.ai/', policy, timeoutMs, [
+    'unavailable in region',
+    'not available in your country',
+    'region not supported',
+    'is not available in your region'
+  ]);
+}
+
+function checkCopilot(ctx, policy, timeoutMs) {
+  return checkAIByKeywords(ctx, 'https://copilot.microsoft.com/', policy, timeoutMs, [
+    'not available in your region',
+    'unsupported region',
+    'not available in your country'
+  ]);
+}
+
+function checkGrok(ctx, policy, timeoutMs) {
+  return checkAIByKeywords(ctx, 'https://grok.x.ai/', policy, timeoutMs, [
+    'not available in your region',
+    'unsupported region',
+    'not available in your country'
+  ]);
+}
+
+function checkPerplexity(ctx, policy, timeoutMs) {
+  return checkAIByKeywords(ctx, 'https://www.perplexity.ai/', policy, timeoutMs, [
+    'not available in your region',
+    'unsupported region',
+    'not available in your country'
+  ]);
+}
+
+// ============================================================
+// jp 组
+// ============================================================
+
+// ---- Abema（日本）----
+async function checkAbema(ctx, policy, timeoutMs) {
+  const resp = await httpGet(
+    ctx, 'https://api.abema.io/v1/ip/check?device=android', policy, timeoutMs,
+    { headers: { 'user-agent': DALVIK_UA } }
+  );
+
+  const b = await readJson(resp);
+  if (!b) return result(ST.UNKNOWN, '', 'bad json');
+
+  const code = String(b.isoCountryCode || b.IsoCountryCode || '').toUpperCase();
+  if (code === 'JP') return result(ST.OK, 'jp', '');
+  if (!code) return result(ST.UNKNOWN, '', 'no code');
+
+  // 非日本：Abema 仍有部分海外可看内容，按受限处理而不是直接判未解锁
+  return result(ST.RESTRICTED, code, '海外限定');
+}
+
+// ---- niconico（日本）----
+async function checkNiconico(ctx, policy, timeoutMs) {
+  const resp = await httpGet(ctx, 'https://www.nicovideo.jp/watch/so40278367', policy, timeoutMs);
+  const s = await readText(resp);
+  if (!s) return result(ST.UNKNOWN, '', 'empty body');
+
+  if (s.indexOf('同じ地域') !== -1) return result(ST.NO, '', '');
+  return result(ST.OK, 'jp', '');
+}
+
+// ---- TVer（日本）----
+// Brightcove 播放接口，需要在 Accept 里带 TVer 的公钥
+async function checkTVer(ctx, policy, timeoutMs) {
+  const resp = await httpGet(
+    ctx,
+    'https://edge.api.brightcove.com/playback/v1/accounts/5102072605001/videos/ref%3Akaguyasama_01',
+    policy,
+    timeoutMs,
+    { headers: { 'user-agent': BROWSER_UA, accept: TVER_ACCEPT } }
+  );
+
+  const s = await readText(resp);
+  if (!s) return result(ST.UNKNOWN, '', 'empty body');
+
+  if (s.indexOf('error_subcode') !== -1) return result(ST.NO, '', '');
+  return result(ST.OK, 'jp', '');
+}
+
+// ---- U-NEXT（日本）----
+// result_status：475 / 200 = 可播放，467 = 地区限制
+async function checkUNext(ctx, policy, timeoutMs) {
+  const resp = await httpGet(
+    ctx,
+    'https://video-api.unext.jp/api/1/player?entity%5B%5D=playlist_url&episode_code=ED00148814&title_code=SID0028118&keyonly_flg=0&play_mode=caption&bitrate_low=1500',
+    policy,
+    timeoutMs
+  );
+
+  const b = await readJson(resp);
+  if (!b) return result(ST.UNKNOWN, '', 'bad json');
+
+  const st = Number(
+    b && b.data && b.data.entities_data && b.data.entities_data.playlist_url
+      ? b.data.entities_data.playlist_url.result_status
+      : NaN
+  );
+
+  if (st === 475 || st === 200) return result(ST.OK, 'jp', '');
+  if (st === 467) return result(ST.NO, '', '地区限制');
+  return result(ST.UNKNOWN, '', 'status ' + st);
+}
+
+// ---- FOD（日本，富士台）----
+// 返回 XML，含 true = 可看，false = 地区限制
+async function checkFOD(ctx, policy, timeoutMs) {
+  const resp = await httpGet(
+    ctx, 'https://geocontrol1.stream.ne.jp/fod-geo/check.xml?time=1624504256', policy, timeoutMs
+  );
+
+  const s = await readText(resp);
+  if (!s) return result(ST.UNKNOWN, '', 'empty body');
+
+  if (s.indexOf('true') !== -1) return result(ST.OK, 'jp', '');
+  if (s.indexOf('false') !== -1) return result(ST.NO, '', '');
+  return result(ST.UNKNOWN, '', 'unknown');
+}
+
+// ---- DMM（日本）----
+async function checkDMM(ctx, policy, timeoutMs) {
+  const resp = await httpGet(ctx, 'https://bitcoin.dmm.com', policy, timeoutMs);
+  const s = await readText(resp);
+  if (!s) return result(ST.UNKNOWN, '', 'empty body');
+
+  if (s.indexOf('This page is not available in your area') !== -1) return result(ST.NO, '', '');
+  if (s.indexOf('暗号資産') !== -1) return result(ST.OK, 'jp', '');
+  return result(ST.NO, '', '');
+}
+
+// ============================================================
+// hk 组
+// ============================================================
+
+// ---- myTV SUPER（香港）----
+async function checkMyTvSuper(ctx, policy, timeoutMs) {
+  const resp = await httpGet(
+    ctx, 'https://www.mytvsuper.com/api/auth/getSession/self/', policy, timeoutMs,
+    { headers: { 'user-agent': BROWSER_UA, 'content-type': 'application/json' } }
+  );
+
+  const b = await readJson(resp);
+  if (!b) return result(ST.UNKNOWN, '', 'bad json');
+
+  if (Number(b.region) === 1) return result(ST.OK, 'hk', '');
+  return result(ST.NO, '', '');
+}
+
+// ---- Viu（香港/东南亚）----
+// 原实现用 split('/')[4] 按固定段索引取地区码，太脆弱：跳转地址只要多一段或少一段
+// 就会取空，直接掉进「未知」。v1.0.2 改为先判 no-service 关键字，再用正则从路径里
+// 抠两位地区码（/hk/、/sg/ 之类），对格式变化不敏感。
+async function checkViu(ctx, policy, timeoutMs) {
+  const resp = await httpGet(ctx, 'https://www.viu.com', policy, timeoutMs, { redirect: 'manual' });
+  const loc = readHeader(resp && resp.headers, 'location');
+
+  if (!loc) return result(ST.NO, '', '');
+
+  if (String(loc).indexOf('no-service') !== -1) return result(ST.NO, '', '');
+
+  const m = String(loc).match(/\/([a-z]{2})(?:[/-]|$)/i);
+  if (m && m[1]) return result(ST.OK, m[1].toLowerCase(), '');
+
+  // 拿不到地区码但也没被拦，按解锁处理（不编造地区）
+  return result(ST.OK, '', '');
+}
+
+// ---- TVB Anywhere（香港）----
+async function checkTVB(ctx, policy, timeoutMs) {
+  const resp = await httpGet(
+    ctx, 'https://uapisfm.tvbanywhere.com.sg/geoip/check/platform/android', policy, timeoutMs
+  );
+
+  const b = await readJson(resp);
+  if (!b) return result(ST.UNKNOWN, '', 'bad json');
+
+  if (b.allow_in_this_country) {
+    return result(ST.OK, String(b.country || '').toLowerCase(), '');
+  }
+  return result(ST.NO, '', '');
+}
+
+// ---- now E（香港）----
+// responseCode：PRODUCT_INFORMATION_INCOMPLETE = 可看，GEO_CHECK_FAIL = 地区限制
+async function checkNowE(ctx, policy, timeoutMs) {
+  const body =
+    '{"contentId":"202105121370235","contentType":"Vod","pin":"",' +
+    '"deviceId":"W-60b8d30a-9294-d251-617b-c12f9d0c","deviceType":"WEB"}';
+
+  const resp = await httpPost(
+    ctx, 'https://webtvapi.nowe.com/16/1/getVodURL', policy, timeoutMs, body, jsonHeaders()
+  );
+
+  const b = await readJson(resp);
+  if (!b) return result(ST.UNKNOWN, '', 'bad json');
+
+  const code = String(b.responseCode || b.ResponseCode || '');
+  if (code === 'PRODUCT_INFORMATION_INCOMPLETE') return result(ST.OK, 'hk', '');
+  if (code === 'GEO_CHECK_FAIL') return result(ST.NO, '', '');
+  return result(ST.UNKNOWN, '', code || 'unknown');
+}
+
+// ---- encoreTVB（香港）----
+async function checkEncoreTVB(ctx, policy, timeoutMs) {
+  const resp = await httpGet(
+    ctx,
+    'https://edge.api.brightcove.com/playback/v1/accounts/5324042807001/videos/6005570109001',
+    policy,
+    timeoutMs,
+    {
+      headers: {
+        'user-agent': BROWSER_UA,
+        accept: ENCORE_ACCEPT,
+        origin: 'https://www.encoretvb.com'
+      }
+    }
+  );
+
+  const b = await readJson(resp);
+  if (!b) return result(ST.UNKNOWN, '', 'bad json');
+
+  if (b.error_subcode === 'CLIENT_GEO') return result(ST.NO, '', '');
+  if (b.account_id && String(b.account_id) !== '0') return result(ST.OK, 'hk', '');
+  return result(ST.UNKNOWN, '', 'unknown');
+}
+
+// ---- ViuTV（香港）----
+async function checkViuTV(ctx, policy, timeoutMs) {
+  const body =
+    '{"callerReferenceNo":"20210726112323","contentId":"099","contentType":"Channel",' +
+    '"channelno":"099","mode":"prod","deviceId":"29b3cb117a635d5b56","deviceType":"ANDROID_WEB"}';
+
+  const resp = await httpPost(
+    ctx, 'https://api.viu.now.com/p8/3/getLiveURL', policy, timeoutMs, body, jsonHeaders()
+  );
+
+  const b = await readJson(resp);
+  if (!b) return result(ST.UNKNOWN, '', 'bad json');
+
+  const code = String(b.responseCode || b.ResponseCode || '');
+  if (code === 'SUCCESS') return result(ST.OK, 'hk', '');
+  if (code === 'GEO_CHECK_FAIL') return result(ST.NO, '', '');
+  return result(ST.UNKNOWN, '', code || 'unknown');
+}
+
+// ============================================================
+// tw 组
+// ============================================================
+
+// ---- B站 台湾 ----
+async function checkBiliTW(ctx, policy, timeoutMs) {
+  const resp = await httpGet(
+    ctx,
+    'https://api.bilibili.com/pgc/player/web/playurl?avid=50762638&cid=100279344&qn=0&type=&otype=json&ep_id=268176&fourk=1&fnver=0&fnval=16&module=bangumi',
+    policy,
+    timeoutMs
+  );
+
+  const b = await readJson(resp);
+  if (!b) return result(ST.UNKNOWN, '', 'bad json');
+
+  const code = Number(b.code);
+  if (code === -10403) return result(ST.NO, '', '地区限制');
+  if (code === 0) return result(ST.OK, '', '');
+  return result(ST.UNKNOWN, '', 'code ' + code);
+}
+
+// ---- 4GTV（台湾）----
+async function check4GTV(ctx, policy, timeoutMs) {
+  const body =
+    'value=D33jXJ0JVFkBqV%2BZSi1mhPltbejAbPYbDnyI9hmfqjKaQwRQdj7ZKZRAdb16%2FRUrE8vGXLFfNKBLKJv%2BfDSiD%2BZJlUa5Msps2P4IWuTrUP1%2BCnS255YfRadf%2BKLUhIPj';
+
+  const resp = await httpPost(
+    ctx, 'https://api2.4gtv.tv//Vod/GetVodUrl3', policy, timeoutMs, body, formHeaders()
+  );
+
+  const b = await readJson(resp);
+  if (!b) return result(ST.UNKNOWN, '', 'bad json');
+
+  if (b.success === true) return result(ST.OK, 'tw', '');
+  if (b.success === false) return result(ST.NO, '', '');
+  return result(ST.UNKNOWN, '', 'unknown');
+}
+
+// ---- LINE TV（台湾）----
+// countryCode 228 = 台湾
+async function checkLineTV(ctx, policy, timeoutMs) {
+  const resp = await httpGet(
+    ctx, 'https://www.linetv.tw/api/part/11829/eps/1/part?chocomemberId=', policy, timeoutMs
+  );
+
+  const b = await readJson(resp);
+  if (!b) return result(ST.UNKNOWN, '', 'bad json');
+
+  if (Number(b.countryCode) === 228) return result(ST.OK, 'tw', '');
+  return result(ST.NO, '', '');
+}
+
+// ---- MyVideo（台湾）----
+async function checkMyVideo(ctx, policy, timeoutMs) {
+  const resp = await httpGet(ctx, 'https://www.myvideo.net.tw/login.do', policy, timeoutMs);
+  const s = await readText(resp);
+  if (!s) return result(ST.UNKNOWN, '', 'empty body');
+
+  if (s.indexOf('serviceAreaBlock') !== -1) return result(ST.NO, '', '');
+  return result(ST.OK, 'tw', '');
+}
+
+// ---- KKTV（台湾）----
+async function checkKKTV(ctx, policy, timeoutMs) {
+  const resp = await httpGet(ctx, 'https://api.kktv.me/v3/ipcheck', policy, timeoutMs);
+
+  const b = await readJson(resp);
+  if (!b || !b.data) return result(ST.UNKNOWN, '', 'bad json');
+
+  const country = String(b.data.country || '').toUpperCase();
+  if (country === 'TW' && b.data.is_allowed) return result(ST.OK, 'tw', '');
+  return result(ST.NO, '', '');
+}
+
+// ---- Hami Video（台湾，中华电信）----
+async function checkHamiVideo(ctx, policy, timeoutMs) {
+  const resp = await httpGet(
+    ctx, 'https://hamivideo.hinet.net/api/play.do?id=OTT_VOD_0000249064&freeProduct=1', policy, timeoutMs
+  );
+
+  const b = await readJson(resp);
+  if (!b) return result(ST.UNKNOWN, '', 'bad json');
+
+  if (String(b.code) === '06001-107') return result(ST.OK, 'tw', '');
+  return result(ST.NO, '', '');
+}
+
+// ============================================================
+// us 组
+// ============================================================
+
+// ---- Hulu（美区）----
+async function checkHulu(ctx, policy, timeoutMs) {
+  const resp = await httpGet(ctx, 'https://www.hulu.com', policy, timeoutMs);
+  if (readStatus(resp) === 403) return result(ST.NO, '', '');
+  return result(ST.OK, 'us', '');
+}
+
+// ---- Peacock（美区）----
+async function checkPeacock(ctx, policy, timeoutMs) {
+  const resp = await httpGet(ctx, 'https://www.peacocktv.com/', policy, timeoutMs, { redirect: 'manual' });
+  const loc = readHeader(resp && resp.headers, 'location');
+
+  if (String(loc).indexOf('unavailable') !== -1) return result(ST.NO, '', '');
+  return result(ST.OK, 'us', '');
+}
+
+// ============================================================
+// 检测函数分发表
+// ============================================================
+
+const CHECKERS = {
+  nf: checkNetflix,
+  dis: checkDisney,
+  yt: checkYouTube,
+  pv: checkPrimeVideo,
+  hbo: checkHBOMax,
+  sp: checkSpotify,
+  gpt: checkChatGPT,
+  gemini: checkGemini,
+  claude: checkClaude,
+  copilot: checkCopilot,
+  grok: checkGrok,
+  pplx: checkPerplexity,
+  abema: checkAbema,
+  nico: checkNiconico,
+  tver: checkTVer,
+  unext: checkUNext,
+  fod: checkFOD,
+  dmm: checkDMM,
+  mytv: checkMyTvSuper,
+  viu: checkViu,
+  tvb: checkTVB,
+  nowe: checkNowE,
+  encore: checkEncoreTVB,
+  viutv: checkViuTV,
+  bilitw: checkBiliTW,
+  '4gtv': check4GTV,
+  linetv: checkLineTV,
+  myvideo: checkMyVideo,
+  kktv: checkKKTV,
+  hami: checkHamiVideo,
+  hulu: checkHulu,
+  peacock: checkPeacock
+};
+
+// ============================================================
+// 主流程
+// ============================================================
+
+export default async function (ctx = {}) {
+  const strategyGroup = (ctx.env && ctx.env.GROUP) || 'DIRECT';
+  const widgetFamily = ctx.widgetFamily || 'systemMedium';
+  const style = styleMode(ctx);
+
+  const refreshMinutes = (function () {
+    const n = Number((ctx.env && ctx.env.REFRESH_MINUTES) || 30);
+    return isFinite(n) && n > 0 ? n : 30;
+  })();
+
+  const cacheMinutes = (function () {
+    const raw = ctx.env && ctx.env.CACHE_MINUTES;
+    if (raw === undefined || raw === null || String(raw).trim() === '') return 10;
+    const n = Number(raw);
+    return isFinite(n) && n >= 0 ? n : 10;
+  })();
+
+  const timeoutMs = (function () {
+    const n = Number((ctx.env && ctx.env.TIMEOUT) || 2500);
+    return isFinite(n) && n > 0 ? n : 2500;
+  })();
+
+  const refreshAfter = new Date(Date.now() + refreshMinutes * 60000).toISOString();
+
+  // ---- 解析 CATEGORY：分组名可多选，按书写顺序去重 ----
+  const tokens = String((ctx.env && ctx.env.CATEGORY) || '')
+    .split(',')
+    .map(function (s) { return s.trim().toLowerCase(); })
+    .filter(Boolean);
+
+  const groups = [];
+  let keys = [];
+
+  if (tokens.length) {
+    for (const t of tokens) {
+      if (!GROUPS[t]) continue;
+      if (groups.indexOf(t) === -1) groups.push(t);
+      for (const k of GROUPS[t]) {
+        // 跨分组重复的服务只保留一次，位置以首次出现为准
+        if (keys.indexOf(k) === -1) keys.push(k);
+      }
+    }
+  }
+
+  if (!keys.length) {
+    groups.push(DEFAULT_GROUP);
+    keys = GROUPS[DEFAULT_GROUP].slice();
+  }
+
+  const list = keys.map(function (k) {
+    return SERVICES.find(function (s) { return s.key === k; });
+  }).filter(Boolean);
+
+  // ---- 缓存读取 ----
+  const cacheKey = 'unlock_' + strategyGroup;
+  const CACHE_TTL = cacheMinutes * 60000;
+  let results = null;
+  let cached = false;
+
+  if (CACHE_TTL > 0) {
+    try {
+      const hit = ctx.storage && ctx.storage.getJSON ? ctx.storage.getJSON(cacheKey) : null;
+      if (hit && typeof hit === 'object' && hit.ts) {
+        const age = Date.now() - Number(hit.ts || 0);
+        if (age >= 0 && age <= CACHE_TTL && hit.data && typeof hit.data === 'object') {
+          // 只接纳本次要显示的服务都在缓存里的情况，避免筛选条件变了却渲染旧集合
+          const all = keys.every(function (k) { return hit.data[k]; });
+          if (all) {
+            results = {};
+            for (const k of keys) results[k] = hit.data[k];
+            cached = true;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  // ---- 并发探测 ----
+  if (!results) {
+    const TOTAL_BUDGET_MS = 8000;
+    const deadline = Date.now() + TOTAL_BUDGET_MS;
+
+    const tasks = keys.map(function (key) {
+      const fn = CHECKERS[key];
+      return safeCheck(function () { return fn(ctx, strategyGroup, timeoutMs); }).then(function (r) {
+        // 预算耗尽后仍未返回的，统一降级为「未知」
+        if (Date.now() > deadline) return result(ST.UNKNOWN, '', 'budget');
+        return r;
+      });
+    });
+
+    const settled = await Promise.all(tasks);
+
+    results = {};
+    keys.forEach(function (k, idx) { results[k] = settled[idx]; });
+
+    if (CACHE_TTL > 0) {
+      try {
+        if (ctx.storage && ctx.storage.setJSON) {
+          ctx.storage.setJSON(cacheKey, { ts: Date.now(), data: results });
+        }
+      } catch (_) {}
+    }
+  }
+
+  // ---- 渲染 ----
+  return render({
+    family: widgetFamily,
+    style: style,
+    refreshAfter: refreshAfter,
+    list: list,
+    results: results,
+    group: strategyGroup,
+    cached: cached,
+    categories: groups
+  });
+}
+
+// ============================================================
+// 渲染
+// ============================================================
+
+// 各尺寸最多显示几行（受卡片物理高度限制）
+function limitForFamily(family) {
+  if (family === 'systemSmall') return 6;
+  if (family === 'systemMedium') return 12;
+  if (family === 'systemLarge' || family === 'systemExtraLarge') return 24;
+  return 6;
+}
+
+function render(opts) {
+  const family = opts.family;
+  const style = opts.style;
+  const results = opts.results;
+  const group = opts.group;
+
+  const list = opts.list.slice(0, limitForFamily(family));
+  const big = family === 'systemLarge' || family === 'systemExtraLarge';
+
+  const C = {
+    bgTop: '#0C0D0F',
+    bgBottom: '#141619',
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    text: '#F8FAFC',
+    secondary: '#94A3B8',
+    muted: '#64748B',
+    ok: '#34D399',
+    no: '#EF4444',
+    warn: '#FACC15',
+    banned: '#DC2626',
+    unknown: '#64748B'
+  };
+
+  const gradient = {
+    type: 'linear',
+    colors: [C.bgTop, C.bgBottom],
+    startPoint: { x: 0.5, y: 0 },
+    endPoint: { x: 0.5, y: 1 }
+  };
+
+  function meta(r) {
+    const st = (r && r.status) || ST.UNKNOWN;
+    if (st === ST.OK) return { color: C.ok, symbol: 'sf-symbol:checkmark.circle.fill', label: '解锁' };
+    if (st === ST.NO) return { color: C.no, symbol: 'sf-symbol:xmark.circle.fill', label: '未解锁' };
+    if (st === ST.RESTRICTED) return { color: C.warn, symbol: 'sf-symbol:exclamationmark.triangle.fill', label: '受限' };
+    if (st === ST.BANNED) return { color: C.banned, symbol: 'sf-symbol:exclamationmark.octagon.fill', label: '封锁' };
+    return { color: C.unknown, symbol: 'sf-symbol:questionmark.circle.fill', label: '未知' };
+  }
+
+  const rows = list.map(function (s) {
+    const r = results[s.key] || result(ST.UNKNOWN, '', '');
+    return { service: s, r: r, m: meta(r) };
+  });
+
+  const total = opts.list.length;
+  const okCount = opts.list.filter(function (s) {
+    return (results[s.key] || {}).status === ST.OK;
+  }).length;
+
+  // 标题：单分组显示分组名，多分组显示「解锁检测」
+  const titleText = opts.categories.length === 1
+    ? (GROUP_LABELS[opts.categories[0]] || '解锁检测')
+    : '解锁检测';
+
+  function tail(x) {
+    if (x.r.status === ST.OK) {
+      return x.r.region ? String(x.r.region).toUpperCase() : '✓';
+    }
+    if (x.r.status === ST.RESTRICTED || x.r.status === ST.BANNED) {
+      return x.r.info || x.m.label;
+    }
+    if (x.r.status === ST.NO) {
+      return x.r.region ? String(x.r.region).toUpperCase() : x.m.label;
+    }
+    return x.m.label;
+  }
+
+  const footerText = group + (opts.cached ? ' · 缓存' : '');
+
+  // 单行：图标 + 名称 + 状态。wide 控制是否显示服务自身图标
+  function rowNode(x, labelSize, tailSize, iconSize, showServiceIcon) {
+    const children = [];
+
+    if (showServiceIcon) {
+      children.push({
+        type: 'image',
+        src: x.service.symbol,
+        width: iconSize,
+        height: iconSize,
+        color: C.secondary
+      });
+    }
+
+    children.push({
+      type: 'text',
+      text: x.service.label,
+      font: { size: labelSize, weight: 'medium' },
+      textColor: C.text,
+      maxLine: 1
+    });
+
+    children.push({ type: 'spacer' });
+    children.push({
+      type: 'image',
+      src: x.m.symbol,
+      width: iconSize - 2,
+      height: iconSize - 2,
+      color: x.m.color
+    });
+    children.push({
+      type: 'text',
+      text: tail(x),
+      font: { size: tailSize, weight: 'bold' },
+      textColor: x.m.color,
+      maxLine: 1
+    });
+
+    return { type: 'stack', direction: 'row', gap: 6, children: children };
+  }
+
+  // ---- accessoryInline ----
+  if (family === 'accessoryInline') {
+    const brief = rows.map(function (x) {
+      return x.service.label + ' ' + tail(x);
+    }).join(' · ');
+    return {
+      type: 'widget',
+      refreshAfter: opts.refreshAfter,
+      children: [{ type: 'text', text: brief || '解锁检测' }]
+    };
+  }
+
+  // ---- accessoryCircular ----
+  // 刻意不用 gauge 节点 —— 该类型未经实测。改用 IP 纯净度组件里已验证过的
+  // stack + text 写法，锁屏上文字颜色由系统统一接管，textColor 仅作兜底。
+  if (family === 'accessoryCircular') {
+    return {
+      type: 'widget',
+      refreshAfter: opts.refreshAfter,
+      children: [
+        { type: 'spacer' },
+        {
+          type: 'stack',
+          direction: 'column',
+          alignItems: 'center',
+          children: [
+            {
+              type: 'text',
+              text: okCount + '/' + total,
+              font: { size: 'title', weight: 'bold' },
+              textColor: okCount === total ? C.ok : C.secondary,
+              textAlign: 'center',
+              minScale: 0.5,
+              maxLine: 1
+            },
+            {
+              type: 'text',
+              text: '解锁',
+              font: { size: 'caption2' },
+              textColor: C.secondary,
+              textAlign: 'center',
+              maxLine: 1
+            }
+          ]
+        },
+        { type: 'spacer' }
+      ]
+    };
+  }
+
+  // ---- accessoryRectangular ----
+  if (family === 'accessoryRectangular') {
+    const first = rows.slice(0, 3).map(function (x) {
+      return {
+        type: 'stack',
+        direction: 'row',
+        gap: 4,
+        children: [
+          { type: 'image', src: x.m.symbol, width: 11, height: 11, color: x.m.color },
+          {
+            type: 'text',
+            text: x.service.label,
+            font: { size: 12, weight: 'medium' },
+            textColor: C.text,
+            maxLine: 1
+          },
+          { type: 'spacer' },
+          {
+            type: 'text',
+            text: tail(x),
+            font: { size: 12, weight: 'bold' },
+            textColor: x.m.color,
+            maxLine: 1
+          }
+        ]
+      };
+    });
+
+    return {
+      type: 'widget',
+      refreshAfter: opts.refreshAfter,
+      children: [
+        {
+          type: 'text',
+          text: titleText + ' ' + okCount + '/' + total,
+          font: { size: 13, weight: 'bold' },
+          textColor: C.secondary,
+          maxLine: 1
+        },
+        { type: 'stack', direction: 'column', gap: 2, children: first }
+      ]
+    };
+  }
+
+  // ---- systemSmall（6 行）----
+  if (family === 'systemSmall') {
+    return {
+      type: 'widget',
+      ...rootBackground(style, gradient),
+      border: { width: 1, color: C.borderColor },
+      padding: 12,
+      gap: 2,
+      children: [
+        {
+          type: 'stack',
+          direction: 'row',
+          gap: 5,
+          children: [
+            { type: 'image', src: 'sf-symbol:play.tv.fill', width: 15, height: 15, color: C.ok },
+            { type: 'text', text: titleText, font: { size: 15, weight: 'bold' }, textColor: C.text },
+            { type: 'spacer' },
+            {
+              type: 'text',
+              text: okCount + '/' + total,
+              font: { size: 12, weight: 'bold' },
+              textColor: okCount === total ? C.ok : C.secondary
+            }
+          ]
+        },
+        { type: 'spacer' },
+        {
+          type: 'stack',
+          direction: 'column',
+          gap: 5,
+          children: rows.map(function (x) { return rowNode(x, 12, 11, 12, false); })
+        },
+        { type: 'spacer' },
+        {
+          type: 'stack',
+          direction: 'row',
+          children: [
+            { type: 'text', text: footerText, font: { size: 9, weight: 'medium' }, textColor: C.muted, maxLine: 1 },
+            { type: 'spacer' }
+          ]
+        }
+      ]
+    };
+  }
+
+  // ---- systemMedium（12 行）----
+  if (family === 'systemMedium') {
+    return {
+      type: 'widget',
+      ...rootBackground(style, gradient),
+      border: { width: 1, color: C.borderColor },
+      padding: 13,
+      gap: 2,
+      children: [
+        {
+          type: 'stack',
+          direction: 'row',
+          gap: 6,
+          children: [
+            { type: 'image', src: 'sf-symbol:play.tv.fill', width: 17, height: 17, color: C.ok },
+            { type: 'text', text: titleText, font: { size: 17, weight: 'bold' }, textColor: C.text },
+            { type: 'spacer' },
+            {
+              type: 'text',
+              text: okCount + '/' + total,
+              font: { size: 13, weight: 'bold' },
+              textColor: okCount === total ? C.ok : C.secondary
+            }
+          ]
+        },
+        { type: 'spacer' },
+        {
+          type: 'stack',
+          direction: 'column',
+          gap: 6,
+          children: rows.map(function (x) { return rowNode(x, 13, 12, 14, true); })
+        },
+        { type: 'spacer' },
+        {
+          type: 'stack',
+          direction: 'row',
+          children: [
+            { type: 'text', text: footerText, font: { size: 10, weight: 'medium' }, textColor: C.muted, maxLine: 1 },
+            { type: 'spacer' }
+          ]
+        }
+      ]
+    };
+  }
+
+  // ---- systemLarge / systemExtraLarge（上限 24 行）----
+  // 只有超过 12 行才分两列 —— 12 行以内单列完全放得下，
+  // 强行分两列会让画面左右各几条，显得很空。
+  const useTwoColumns = rows.length > 12;
+  const half = Math.ceil(rows.length / 2);
+  const leftRows = rows.slice(0, half);
+  const rightRows = useTwoColumns ? rows.slice(half) : [];
+
+  function columnNode(list) {
+    return {
+      type: 'stack',
+      direction: 'column',
+      gap: 7,
+      children: list.map(function (x) { return rowNode(x, 12, 11, 13, true); })
+    };
+  }
+
+  return {
+    type: 'widget',
+    ...rootBackground(style, gradient),
+    border: { width: 1, color: C.borderColor },
+    padding: 15,
+    gap: 2,
+    children: [
+      {
+        type: 'stack',
+        direction: 'row',
+        gap: 6,
+        children: [
+          { type: 'image', src: 'sf-symbol:play.tv.fill', width: 19, height: 19, color: C.ok },
+          { type: 'text', text: titleText, font: { size: 19, weight: 'bold' }, textColor: C.text },
+          { type: 'spacer' },
+          {
+            type: 'text',
+            text: okCount + '/' + total,
+            font: { size: 14, weight: 'bold' },
+            textColor: okCount === total ? C.ok : C.secondary
+          }
+        ]
+      },
+      { type: 'spacer' },
+      {
+        type: 'stack',
+        direction: 'row',
+        gap: 18,
+        children: useTwoColumns
+          ? [
+              { ...columnNode(leftRows), flex: 1 },
+              { ...columnNode(rightRows), flex: 1 }
+            ]
+          : [{ ...columnNode(leftRows), flex: 1 }]
+      },
+      { type: 'spacer' },
+      {
+        type: 'stack',
+        direction: 'row',
+        children: [
+          { type: 'text', text: footerText, font: { size: 10, weight: 'medium' }, textColor: C.muted, maxLine: 1 },
+          { type: 'spacer' }
+        ]
+      }
+    ]
+  };
+}
