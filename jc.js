@@ -1023,28 +1023,32 @@ export default async function (ctx = {}) {
     return SERVICES.find(function (s) { return s.key === k; });
   }).filter(Boolean);
 
+  // ---- 出口地区先单独拿到 ----
+  // 必须先于 36 个服务请求、独占代理跑完：否则代理被服务请求淹没时，
+  // cdn-cgi/trace 也抢不到连接、跟着超时，exitRegion 为空，下面「按地区推断」整段失效 → 大尺寸全灰。
+  // 这是 v1.0.8 大尺寸全部显示未知的根因。
+  let exitRegion = '';
+  try {
+    const loc = await safeCheck(function () { return getExitRegion(ctx, strategyGroup, timeoutMs); });
+    exitRegion = String((loc && loc.region) || '').toLowerCase();
+  } catch (_) {}
+
   // ---- 并发探测 ----
-  // 全部服务并发探测，整体预算统一 4 秒：超预算的按出口地区推断，保证刷新够快。
+  // 全部服务并发探测，整体预算统一 4 秒：超预算的按上面拿到的出口地区推断，保证刷新够快。
   // 单请求 TIMEOUT 默认 1800ms，两段串行（Netflix / Disney）也能在 4 秒内收口。
   const TOTAL_BUDGET_MS = 4000;
   const deadline = Date.now() + TOTAL_BUDGET_MS;
 
-  // 出口地区查询与各服务检测并行，不占用额外耗时
-  const locTask = safeCheck(function () {
-    return getExitRegion(ctx, strategyGroup, timeoutMs);
-  });
-
   const tasks = keys.map(function (key) {
     const fn = CHECKERS[key];
     return safeCheck(function () { return fn(ctx, strategyGroup, timeoutMs); }).then(function (r) {
-      // 预算耗尽后仍未返回的，统一降级为「未知」
+      // 预算耗尽后仍未返回的，标记「未知」，后续按出口地区推断
       if (Date.now() > deadline) return result(ST.UNKNOWN, '', 'budget');
       return r;
     });
   });
 
   const settled = await Promise.all(tasks);
-  const exitRegion = String((await locTask).region || '').toLowerCase();
 
   const results = {};
   keys.forEach(function (k, idx) {
