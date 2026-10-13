@@ -1226,7 +1226,7 @@ function render(opts) {
       text: x.service.label,
       font: { size: labelSize, weight: 'medium' },
       textColor: C.text,
-      maxLine: 1
+      maxLines: 1
     });
 
     children.push({ type: 'spacer' });
@@ -1242,7 +1242,7 @@ function render(opts) {
       text: tail(x),
       font: { size: tailSize, weight: 'bold' },
       textColor: x.m.color,
-      maxLine: 1
+      maxLines: 1
     });
 
     return { type: 'stack', direction: 'row', gap: 6, children: children };
@@ -1281,7 +1281,7 @@ function render(opts) {
               textColor: okCount === total ? C.ok : C.secondary,
               textAlign: 'center',
               minScale: 0.5,
-              maxLine: 1
+              maxLines: 1
             },
             {
               type: 'text',
@@ -1289,7 +1289,7 @@ function render(opts) {
               font: { size: 'caption2' },
               textColor: C.secondary,
               textAlign: 'center',
-              maxLine: 1
+              maxLines: 1
             }
           ]
         },
@@ -1312,7 +1312,7 @@ function render(opts) {
             text: x.service.label,
             font: { size: 12, weight: 'medium' },
             textColor: C.text,
-            maxLine: 1
+            maxLines: 1
           },
           { type: 'spacer' },
           {
@@ -1320,7 +1320,7 @@ function render(opts) {
             text: tail(x),
             font: { size: 12, weight: 'bold' },
             textColor: x.m.color,
-            maxLine: 1
+            maxLines: 1
           }
         ]
       };
@@ -1335,7 +1335,7 @@ function render(opts) {
           text: titleText + ' ' + okCount + '/' + total,
           font: { size: 13, weight: 'bold' },
           textColor: C.secondary,
-          maxLine: 1
+          maxLines: 1
         },
         { type: 'stack', direction: 'column', gap: 2, children: first }
       ]
@@ -1358,24 +1358,25 @@ function render(opts) {
           children: [
             { type: 'image', src: 'sf-symbol:play.tv.fill', width: 15, height: 15, color: C.ok },
             { type: 'spacer' },
-            { type: 'text', text: timeText(), font: { size: 11, weight: 'medium' }, textColor: C.muted, maxLine: 1 }
+            { type: 'text', text: timeText(), font: { size: 11, weight: 'medium' }, textColor: C.muted, maxLines: 1 }
           ]
         },
-        { type: 'spacer' },
         {
           type: 'stack',
           direction: 'column',
-          gap: 5,
+          gap: 3,
+          flex: 1,
           children: rows.map(function (x) { return rowNode(x, 12, 11, 12, false); })
         }
       ]
     };
   }
 
-  // ---- systemMedium（12 行）----
-  // 布局：标题 / 列表 / 弹性空隙 / 横条贴底。标题后不放弹性 spacer ——
-  // 两个弹性 spacer 会把空隙均分到上下，内容一多行与行就重叠（v1.0.7 实机问题）。
-  // 行距与字号按 12 项两列各 6 行压缩，确保总高不超组件。
+  // ---- systemMedium（12 项，两列各 6 行）----
+  // 布局：标题 / 列表(flex:1 占满中间) / 横条贴底。
+  // 不用弹性 spacer 推横条——内容一多 spacer 被压成负值就会重叠（v1.0.7 实机问题）；
+  // 改为列表 flex:1 吃满剩余高度，横条紧贴末位永远贴底且与列表不重叠。
+  // 行距与字号按两列各 6 行压缩，确保总高不超组件。
   if (family === 'systemMedium') {
     return {
       type: 'widget',
@@ -1390,21 +1391,21 @@ function render(opts) {
           gap: 6,
           alignItems: 'center',
           children: [
-            { type: 'image', src: 'sf-symbol:play.tv.fill', width: 15, height: 15, color: C.ok },
-            { type: 'text', text: titleText, font: { size: 15, weight: 'bold' }, textColor: C.text },
+            { type: 'image', src: 'sf-symbol:play.tv.fill', width: 14, height: 14, color: C.ok },
+            { type: 'text', text: titleText, font: { size: 14, weight: 'bold' }, textColor: C.text },
             { type: 'spacer' },
-            { type: 'text', text: timeText(), font: { size: 11, weight: 'medium' }, textColor: C.muted, maxLine: 1 }
+            { type: 'text', text: timeText(), font: { size: 11, weight: 'medium' }, textColor: C.muted, maxLines: 1 }
           ]
         },
         {
           type: 'stack',
           direction: 'row',
           gap: 14,
+          flex: 1,
           children: columns.map(function (col) {
-            return { ...columnNode(col, 12, 11, 12, 4), flex: 1 };
+            return { ...columnNode(col, 11, 10, 11, 3), flex: 1 };
           })
         },
-        { type: 'spacer' },
         {
           type: 'stack',
           direction: 'row',
@@ -1412,15 +1413,16 @@ function render(opts) {
           gap: 8,
           children: [
             unlockBar(okCount, total, C.ok, C.no, 5),
-            { type: 'text', text: okCount + '/' + total, font: { size: 11, weight: 'bold' }, textColor: C.text, maxLine: 1 }
+            { type: 'text', text: okCount + '/' + total, font: { size: 10, weight: 'bold' }, textColor: C.text, maxLines: 1 }
           ]
         }
       ]
     };
   }
 
-  // ---- systemLarge / systemExtraLarge（上限 36 项，两列）----
-  // 与 medium 同构：标题 / 列表 / 弹性空隙 / 横条贴底。行距按最多 16 行/列压缩。
+  // ---- systemLarge / systemExtraLarge（上限 36 项，两列各 18 行）----
+  // 与 medium 同构：标题 / 列表(flex:1 占满中间) / 横条贴底。
+  // 行距与字号按两列各 18 行压缩，确保总高不超组件（large 实测曾因 18 行超高而重叠）。
   return {
     type: 'widget',
     ...rootBackground(style, gradient),
@@ -1434,21 +1436,21 @@ function render(opts) {
         gap: 6,
         alignItems: 'center',
         children: [
-          { type: 'image', src: 'sf-symbol:play.tv.fill', width: 16, height: 16, color: C.ok },
-          { type: 'text', text: titleText, font: { size: 16, weight: 'bold' }, textColor: C.text },
+          { type: 'image', src: 'sf-symbol:play.tv.fill', width: 15, height: 15, color: C.ok },
+          { type: 'text', text: titleText, font: { size: 15, weight: 'bold' }, textColor: C.text },
           { type: 'spacer' },
-          { type: 'text', text: timeText(), font: { size: 11, weight: 'medium' }, textColor: C.muted, maxLine: 1 }
+          { type: 'text', text: timeText(), font: { size: 11, weight: 'medium' }, textColor: C.muted, maxLines: 1 }
         ]
       },
       {
         type: 'stack',
         direction: 'row',
         gap: 16,
-        children: columns.map(function (col) {
-          return { ...columnNode(col, 11, 10, 11, 4), flex: 1 };
-        })
-      },
-      { type: 'spacer' },
+        flex: 1,
+          children: columns.map(function (col) {
+            return { ...columnNode(col, 10, 9, 10, 3), flex: 1 };
+          })
+        },
       {
         type: 'stack',
         direction: 'row',
@@ -1456,7 +1458,7 @@ function render(opts) {
         gap: 8,
         children: [
           unlockBar(okCount, total, C.ok, C.no, 6),
-          { type: 'text', text: okCount + '/' + total, font: { size: 12, weight: 'bold' }, textColor: C.text, maxLine: 1 }
+          { type: 'text', text: okCount + '/' + total, font: { size: 11, weight: 'bold' }, textColor: C.text, maxLines: 1 }
         ]
       }
     ]
