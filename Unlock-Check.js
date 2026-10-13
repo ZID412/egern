@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.6
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.7
 按分组检测当前出口 IP 对流媒体 / AI 服务的解锁情况。
 
 【环境变量配置说明】
@@ -466,29 +466,24 @@ async function getExitRegion(ctx, policy, timeoutMs) {
 }
 
 // ---- ChatGPT（可靠性高）----
-// 先读 cdn-cgi/trace 的 loc 拿到出口地区，再查 OpenAI 官方支持国家列表；
-// trace 与主页并行发（v1.1.0 提速：串行两跳 → 并排一跳）
-async function checkChatGPT(ctx, policy, timeoutMs) {
-  const pair = await Promise.all([
-    httpGet(ctx, 'https://chat.openai.com/cdn-cgi/trace', policy, timeoutMs),
-    httpGet(ctx, 'https://chat.openai.com', policy, timeoutMs)
-  ]);
-  const trace = pair[0];
-  const home = pair[1];
+// v1.1.7：地区复用前置「出口地区查询」的 trace 结果（同源同值，不再重复请求）；
+// 主页请求已移除（它只为「VPN 拦截 / 限流」两个附加状态，却是最重的请求之一）——
+// 现仅按出口地区 + OpenAI 支持名单判定：常见路径零请求、瞬时出结果。
+async function checkChatGPT(ctx, policy, timeoutMs, exitRegionIn) {
+  let loc = String(exitRegionIn || '').trim().toUpperCase();
 
-  const ts = await readText(trace);
-  const i = ts.indexOf('loc=');
-  if (i === -1) return result(ST.UNKNOWN, '', 'no loc');
+  // 前置查询失败（exitRegion 为空）→ 自取一次 trace 兜底
+  if (!loc) {
+    const trace = await httpGet(ctx, 'https://chat.openai.com/cdn-cgi/trace', policy, timeoutMs);
+    const ts = await readText(trace);
+    const i = ts.indexOf('loc=');
+    if (i === -1) return result(ST.UNKNOWN, '', 'no loc');
 
-  const rest = ts.slice(i + 4);
-  const nl = rest.indexOf('\n');
-  const loc = (nl === -1 ? rest : rest.slice(0, nl)).trim().toUpperCase();
-  if (!loc) return result(ST.UNKNOWN, '', 'empty loc');
-
-  const body = await readText(home);
-
-  if (body && body.indexOf('VPN') !== -1) return result(ST.BANNED, loc, 'VPN 拦截');
-  if (readStatus(home) === 429) return result(ST.RESTRICTED, loc, '限流');
+    const rest = ts.slice(i + 4);
+    const nl = rest.indexOf('\n');
+    loc = (nl === -1 ? rest : rest.slice(0, nl)).trim().toUpperCase();
+    if (!loc) return result(ST.UNKNOWN, '', 'empty loc');
+  }
 
   if (GPT_SUPPORT.has(loc)) return result(ST.OK, loc, '');
   return result(ST.NO, loc, '地区不支持');
@@ -601,11 +596,25 @@ function regionFromMetaCode(body) {
 }
 
 // ---- Apple TV+（显示 AppleTV）----
-// 旧版把地区硬编码成 us（美国组时代遗留），任何节点都显示 US，且只拦 403——
-// 连 404/5xx 也会被判成「美区解锁」。现读真实信号：403 / unavailable → 未解锁；
-// 跳回本地区 storefront（如 /tw）→ 显示该地区；直达 200 → 地区留空由出口地区兜底；其余 → 未知。
+// v1.1.7：tv.apple.com 系页面已全面 404 失效（旧判定实际从未真正工作，此前靠推断遮掩）。
+// 首选 Apple 定位服务接口 gcc：响应仅 2 字节，直接返回请求出口对应的商店地区码（TW/HK/CN…）。
+// 中国大陆等不提供 Apple TV+ 的地区判未解锁；gcc 失败才回退旧的 tv.apple.com/us 探测。
+const APPLE_TV_BLOCK = ['cn', 'kp', 'sy', 'cu', 'ir', 'ru'];
 async function checkAppleTV(ctx, policy, timeoutMs) {
-  const resp = await httpGet(ctx, 'https://tv.apple.com/us', policy, timeoutMs, { redirect: 'manual' });
+  // timeoutMs 语义 = 本服务检测的预算（v1.1.6 起），两段请求共享
+  const deadline = Date.now() + timeoutMs;
+  const left = function () { return Math.max(deadline - Date.now(), 300); };
+
+  const gcc = await httpGet(ctx, 'https://gspe1-ssl.ls.apple.com/pep/gcc', policy, left());
+  const code = String(await readText(gcc)).trim().toUpperCase();
+  if (/^[A-Z]{2}$/.test(code)) {
+    const region = code.toLowerCase();
+    if (APPLE_TV_BLOCK.indexOf(region) !== -1) return result(ST.NO, region, '');
+    return result(ST.OK, region, '');
+  }
+
+  // gcc 拿不到地区码 → 回退旧探测（多为 404，仅保留 403 封锁 / 跳转地区 等信号）
+  const resp = await httpGet(ctx, 'https://tv.apple.com/us', policy, left(), { redirect: 'manual' });
   const st = readStatus(resp);
   const loc = String(readHeader(resp && resp.headers, 'location'));
 
@@ -810,7 +819,8 @@ export default async function (ctx = {}) {
   const BUDGET_MS = isLarge ? 10000 : 5000;
   const tasks = keys.map(function (key) {
     const fn = CHECKERS[key];
-    return safeCheck(function () { return fn(ctx, strategyGroup, BUDGET_MS); });
+    // 第 4 参 = 前置拿到的出口地区（只有 ChatGPT 会用：复用 trace、零额外请求）
+    return safeCheck(function () { return fn(ctx, strategyGroup, BUDGET_MS, exitRegion); });
   });
 
   const settled = await Promise.all(tasks);
