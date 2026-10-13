@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.6
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.7
 按分组检测当前出口 IP 对流媒体 / AI 服务 / 各地区平台的解锁情况。
 
 【环境变量配置说明】
@@ -29,32 +29,11 @@ us：Netflix / Disney+ / HBO Max /  Hulu / Peacock / Prime Video
 值：glass（液态玻璃透壁纸），不填默认黑色背景
 
 【状态含义】
-- 解锁（绿）：该服务在当前出口可用，右侧显示地区码
-- 未解锁（红）：服务可达，但当前地区不支持
-- 受限（黄）：部分可用（Netflix 仅自制剧 / ChatGPT 限流 / Abema 海外限定）
-- 封锁（红）：IP 被服务方拉黑（Netflix 403 / OpenAI VPN 拦截）
-- 未知（灰）：探测失败（超时、网络错误、接口变更）
-
-【重要】
-探测失败（超时 / 网络错误）时，优先按出口地区 + 该服务的支持地区名单推断：
-在名单内按「解锁」显示、不在按「未解锁」显示，右侧同样显示地区；
-只有出口地区拿不到、或该服务没有名单时，才显示灰色「未知」。
-推断表示「该地区在官方支持范围内」，不保证当前 IP 未被风控，可能与实际有出入。
-
-【可靠性分级】（务必先看这条）
-- **高**：流媒体组、以及各地区组的绝大多数服务。判定依据是各服务自己的
-  地区校验接口（返回码 / 地区字段 / 明确的限制文案），与 MediaUnlockTest 一致。
-- **中**：Disney+（依赖公开流传的 refresh_token）、Spotify（依赖公开流传的 key）、
-  niconico（判定只看页面是否含「同じ地域」文案，属弱特征）。
-  这几个失效后会显示「未知」，需要更新常量。
-- **较低**：ai 组里除 ChatGPT 外的 5 项（Gemini / Claude / Copilot / Grok / Perplexity）。
-  MediaUnlockTest 里没有这些服务的实现，判定用的是「地区限制关键词匹配」的启发式方法，
-  **未经过多地区真实验证**。它们可能显示「未知」，也可能出现误判，请当作参考而非结论。
-  ChatGPT 例外：它走 cdn-cgi/trace 取出口地区 + OpenAI 官方支持国家列表，可靠性高。
-
-【已知未做】
-Hulu Japan —— 原实现判定依据是「跟随跳转后最终 URL 是否以 restrict.html 结尾」，
-而 Egern 的 Response 对象不暴露最终 URL（只有 status/headers/body），脚本里拿不到。
+- 解锁：该服务在当前出口可用，右侧显示地区码
+- 未解锁：服务可达，但当前地区不支持
+- 受限：部分可用（Netflix 仅自制剧 / ChatGPT 限流 / Abema 海外限定）
+- 封锁：IP 被服务方拉黑（Netflix 403 / OpenAI VPN 拦截）
+- 未知：探测失败（超时、网络错误、接口变更）
 
 ----------------------------------------------------------
  */
@@ -1003,9 +982,10 @@ export default async function (ctx = {}) {
     return isFinite(n) && n > 0 ? n : 30;
   })();
 
+  // 默认 1800ms：两段串行（Netflix / Disney）也控制在 4 秒预算内
   const timeoutMs = (function () {
-    const n = Number((ctx.env && ctx.env.TIMEOUT) || 2500);
-    return isFinite(n) && n > 0 ? n : 2500;
+    const n = Number((ctx.env && ctx.env.TIMEOUT) || 1800);
+    return isFinite(n) && n > 0 ? n : 1800;
   })();
 
   const refreshAfter = new Date(Date.now() + refreshMinutes * 60000).toISOString();
@@ -1045,10 +1025,9 @@ export default async function (ctx = {}) {
   }).filter(Boolean);
 
   // ---- 并发探测 ----
-  // 执行预算按检测量分档：≤12 项（小/中尺寸）8 秒足够；大尺寸最多 36 项，
-  // 预算放宽到 30 秒 —— 大尺寸必须在 scriptings 条目里把 timeout 调到 35 以上
-  // （Egern 默认 10 秒、最大 600），否则脚本会先于预算被强杀。
-  const TOTAL_BUDGET_MS = keys.length > 12 ? 30000 : 8000;
+  // 全部服务并发探测，整体预算统一 4 秒：超预算的按出口地区推断，保证刷新够快。
+  // 单请求 TIMEOUT 默认 1800ms，两段串行（Netflix / Disney）也能在 4 秒内收口。
+  const TOTAL_BUDGET_MS = 4000;
   const deadline = Date.now() + TOTAL_BUDGET_MS;
 
   // 出口地区查询与各服务检测并行，不占用额外耗时
@@ -1078,18 +1057,16 @@ export default async function (ctx = {}) {
       return;
     }
 
-    // 检测失败/超时 → 按出口地区查支持名单推断；无从推断时保持「未知」。
-    // 推断出的「未解锁」不带地区码 —— tail 逻辑对 NO 结果是地区码优先，
-    // 带了就会显示红色地区码而不是「未解锁」文字，语义反而不清楚。
+    // 检测失败/超时 → 按出口地区查支持名单推断。
+    // 只接受「推断为支持」；推断为不支持的一律保持未知 ——
+    // 「未解锁」只留给真正按出口 IP 检测出来的结果，不拿推断冒充实测。
     if (r.status === ST.UNKNOWN && exitRegion) {
       const verdict = fallbackVerdict(k, exitRegion);
       if (verdict === 'ok') {
         results[k] = result(ST.OK, exitRegion, '按地区推断');
-      } else if (verdict === 'no') {
-        results[k] = result(ST.NO, '', '按地区推断');
-      } else {
-        results[k] = r;
+        return;
       }
+      results[k] = r;
       return;
     }
 
@@ -1106,6 +1083,36 @@ export default async function (ctx = {}) {
     group: strategyGroup,
     categories: groups
   });
+}
+
+// 右上角刷新时间（HH:MM），与订阅看板一致
+function timeText() {
+  const d = new Date();
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  return h + ':' + m;
+}
+
+// 解锁比例横条：绿段 = 解锁，红段 = 未解锁 + 未知。
+// 沿用订阅看板 renderProgress 的 flex 分段 + borderRadius 99 写法。
+function unlockBar(okCount, total, okColor, noColor, height) {
+  const ratio = total > 0 ? okCount / total : 0;
+  const safe = Math.min(Math.max(ratio, 0), 1);
+  // 全解锁时铺满；否则至少留 1% 避免整条消失
+  const filled = safe >= 1 ? 100 : Math.max(Math.round(safe * 1000) / 10, 1);
+  const empty = 100 - filled;
+
+  return {
+    type: 'stack',
+    flex: 1,
+    direction: 'row',
+    alignItems: 'center',
+    gap: 0,
+    children: [
+      { type: 'stack', flex: filled, height: height, backgroundColor: okColor, borderRadius: 99, children: [] },
+      { type: 'stack', flex: empty, height: height, backgroundColor: noColor, borderRadius: 99, children: [] }
+    ]
+  };
 }
 
 // ============================================================
@@ -1351,14 +1358,8 @@ function render(opts) {
           gap: 5,
           children: [
             { type: 'image', src: 'sf-symbol:play.tv.fill', width: 15, height: 15, color: C.ok },
-            { type: 'text', text: titleText, font: { size: 15, weight: 'bold' }, textColor: C.text },
             { type: 'spacer' },
-            {
-              type: 'text',
-              text: okCount + '/' + total,
-              font: { size: 12, weight: 'bold' },
-              textColor: okCount === total ? C.ok : C.secondary
-            }
+            { type: 'text', text: timeText(), font: { size: 11, weight: 'medium' }, textColor: C.muted, maxLine: 1 }
           ]
         },
         { type: 'spacer' },
@@ -1389,12 +1390,7 @@ function render(opts) {
             { type: 'image', src: 'sf-symbol:play.tv.fill', width: 17, height: 17, color: C.ok },
             { type: 'text', text: titleText, font: { size: 17, weight: 'bold' }, textColor: C.text },
             { type: 'spacer' },
-            {
-              type: 'text',
-              text: okCount + '/' + total,
-              font: { size: 13, weight: 'bold' },
-              textColor: okCount === total ? C.ok : C.secondary
-            }
+            { type: 'text', text: timeText(), font: { size: 12, weight: 'medium' }, textColor: C.muted, maxLine: 1 }
           ]
         },
         { type: 'spacer' },
@@ -1405,6 +1401,17 @@ function render(opts) {
           children: columns.map(function (col) {
             return { ...columnNode(col, 13, 12, 14, 6), flex: 1 };
           })
+        },
+        { type: 'spacer' },
+        {
+          type: 'stack',
+          direction: 'row',
+          alignItems: 'center',
+          gap: 8,
+          children: [
+            unlockBar(okCount, total, C.ok, C.no, 5),
+            { type: 'text', text: okCount + '/' + total, font: { size: 12, weight: 'bold' }, textColor: C.text, maxLine: 1 }
+          ]
         }
       ]
     };
@@ -1428,12 +1435,7 @@ function render(opts) {
           { type: 'image', src: 'sf-symbol:play.tv.fill', width: 19, height: 19, color: C.ok },
           { type: 'text', text: titleText, font: { size: 19, weight: 'bold' }, textColor: C.text },
           { type: 'spacer' },
-          {
-            type: 'text',
-            text: okCount + '/' + total,
-            font: { size: 14, weight: 'bold' },
-            textColor: okCount === total ? C.ok : C.secondary
-          }
+          { type: 'text', text: timeText(), font: { size: 12, weight: 'medium' }, textColor: C.muted, maxLine: 1 }
         ]
       },
       { type: 'spacer' },
@@ -1444,6 +1446,17 @@ function render(opts) {
         children: columns.map(function (col) {
           return { ...columnNode(col, 12, 11, 13, 7), flex: 1 };
         })
+      },
+      { type: 'spacer' },
+      {
+        type: 'stack',
+        direction: 'row',
+        alignItems: 'center',
+        gap: 8,
+        children: [
+          unlockBar(okCount, total, C.ok, C.no, 6),
+          { type: 'text', text: okCount + '/' + total, font: { size: 13, weight: 'bold' }, textColor: C.text, maxLine: 1 }
+        ]
       }
     ]
   };
