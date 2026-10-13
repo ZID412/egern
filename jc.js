@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.4
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.5
 按分组检测当前出口 IP 对流媒体 / AI 服务 / 各地区平台的解锁情况。
 
 【环境变量配置说明】
@@ -135,7 +135,7 @@ const SERVICES = [
   { key: 'nf',     label: 'Netflix',      symbol: 'sf-symbol:tv.fill' },
   { key: 'dis',    label: 'Disney+',      symbol: 'sf-symbol:sparkles' },
   { key: 'yt',     label: 'YouTube',      symbol: 'sf-symbol:play.rectangle.fill' },
-  { key: 'pv',     label: 'Prime Video',  symbol: 'sf-symbol:play.circle.fill' },
+  { key: 'pv',     label: 'Prime',        symbol: 'sf-symbol:play.circle.fill' },
   { key: 'hbo',    label: 'HBO Max',      symbol: 'sf-symbol:film.fill' },
   { key: 'sp',     label: 'Spotify',      symbol: 'sf-symbol:music.note' },
   // ---- ai ----
@@ -144,7 +144,7 @@ const SERVICES = [
   { key: 'claude', label: 'Claude',       symbol: 'sf-symbol:bubble.left.and.bubble.right.fill' },
   { key: 'copilot',label: 'Copilot',      symbol: 'sf-symbol:laptopcomputer' },
   { key: 'grok',   label: 'Grok',         symbol: 'sf-symbol:bolt.fill' },
-  { key: 'pplx',   label: 'Perplexity',   symbol: 'sf-symbol:magnifyingglass' },
+  { key: 'pplx',   label: 'Pplx',         symbol: 'sf-symbol:magnifyingglass' },
   // ---- jp ----
   { key: 'abema',  label: 'Abema',        symbol: 'sf-symbol:antenna.radiowaves.left.and.right' },
   { key: 'nico',   label: 'niconico',     symbol: 'sf-symbol:video.fill' },
@@ -153,19 +153,19 @@ const SERVICES = [
   { key: 'fod',    label: 'FOD',          symbol: 'sf-symbol:film' },
   { key: 'dmm',    label: 'DMM',          symbol: 'sf-symbol:bag.fill' },
   // ---- hk ----
-  { key: 'mytv',   label: 'myTV SUPER',   symbol: 'sf-symbol:desktopcomputer' },
+  { key: 'mytv',   label: 'myTV',         symbol: 'sf-symbol:desktopcomputer' },
   { key: 'viu',    label: 'Viu',          symbol: 'sf-symbol:tv' },
-  { key: 'tvb',    label: 'TVB Anywhere', symbol: 'sf-symbol:tv.inset.filled' },
+  { key: 'tvb',    label: 'TVB',          symbol: 'sf-symbol:tv.inset.filled' },
   { key: 'nowe',   label: 'now E',        symbol: 'sf-symbol:circle.grid.2x2' },
-  { key: 'encore', label: 'encoreTVB',    symbol: 'sf-symbol:repeat' },
+  { key: 'encore', label: 'encore',       symbol: 'sf-symbol:repeat' },
   { key: 'viutv',  label: 'ViuTV',        symbol: 'sf-symbol:play.rectangle' },
   // ---- tw ----
   { key: 'bilitw', label: 'B站 台湾',      symbol: 'sf-symbol:play.square.fill' },
   { key: '4gtv',   label: '4GTV',         symbol: 'sf-symbol:square.grid.2x2' },
-  { key: 'linetv', label: 'LINE TV',      symbol: 'sf-symbol:message.fill' },
+  { key: 'linetv', label: 'LINE',         symbol: 'sf-symbol:message.fill' },
   { key: 'myvideo',label: 'MyVideo',      symbol: 'sf-symbol:play.rectangle' },
   { key: 'kktv',   label: 'KKTV',         symbol: 'sf-symbol:play.square' },
-  { key: 'hami',   label: 'Hami Video',   symbol: 'sf-symbol:antenna.radiowaves.left.and.right' },
+  { key: 'hami',   label: 'Hami',         symbol: 'sf-symbol:antenna.radiowaves.left.and.right' },
   // ---- us ----
   { key: 'hulu',   label: 'Hulu',         symbol: 'sf-symbol:display' },
   { key: 'peacock',label: 'Peacock',      symbol: 'sf-symbol:leaf.fill' }
@@ -305,38 +305,36 @@ async function safeCheck(fn) {
 // ============================================================
 
 // ---- Netflix ----
-// 两个片源页都 404 = 仅自制剧；都 403 = IP 被封；
-// 任一 200/301 再去试探页读 location 头里的地区码。
+// 判定链：片源页 200/301 → 试探页读 location 地区（常见解锁路径只要 2 个请求）；
+// 只有第一个片源页 404/403 时才去请求第二个，用来区分「仅自制剧 / IP 被封」。
 // 必须 redirect:'manual' —— 跟随重定向就拿不到 location 了。
 async function checkNetflix(ctx, policy, timeoutMs) {
   const opt = { redirect: 'manual' };
 
-  const pair = await Promise.all([
-    httpGet(ctx, 'https://www.netflix.com/title/81280792', policy, timeoutMs, opt),
-    httpGet(ctx, 'https://www.netflix.com/title/70143836', policy, timeoutMs, opt)
-  ]);
+  const r1 = await httpGet(ctx, 'https://www.netflix.com/title/81280792', policy, timeoutMs, opt);
+  const s1 = readStatus(r1);
 
-  const s1 = readStatus(pair[0]);
-  const s2 = readStatus(pair[1]);
+  let s2 = 0;
+  if (!(s1 === 200 || s1 === 301)) {
+    const r2 = await httpGet(ctx, 'https://www.netflix.com/title/70143836', policy, timeoutMs, opt);
+    s2 = readStatus(r2);
 
-  if (s1 === 404 && s2 === 404) return result(ST.RESTRICTED, '', '仅自制剧');
-  if (s1 === 403 && s2 === 403) return result(ST.BANNED, '', 'IP 被封');
-
-  if (s1 === 200 || s1 === 301 || s2 === 200 || s2 === 301) {
-    const resp3 = await httpGet(ctx, 'https://www.netflix.com/title/80018499', policy, timeoutMs, opt);
-    const loc = readHeader(resp3 && resp3.headers, 'location');
-
-    if (!loc) return result(ST.OK, 'us', '');
-
-    // location 形如 https://www.netflix.com/hk-en/title/... → 取第 4 段再截掉 -xx 后缀
-    const parts = String(loc).split('/');
-    if (parts.length < 5) return result(ST.UNKNOWN, '', 'bad location');
-    const seg = String(parts[3] || '').split('-')[0];
-    if (!seg) return result(ST.UNKNOWN, '', 'bad region');
-    return result(ST.OK, seg.toLowerCase(), '');
+    if (s1 === 404 && s2 === 404) return result(ST.RESTRICTED, '', '仅自制剧');
+    if (s1 === 403 && s2 === 403) return result(ST.BANNED, '', 'IP 被封');
+    if (!(s2 === 200 || s2 === 301)) return result(ST.UNKNOWN, '', 'unexpected ' + s1 + '/' + s2);
   }
 
-  return result(ST.UNKNOWN, '', 'unexpected ' + s1 + '/' + s2);
+  const resp3 = await httpGet(ctx, 'https://www.netflix.com/title/80018499', policy, timeoutMs, opt);
+  const loc = readHeader(resp3 && resp3.headers, 'location');
+
+  if (!loc) return result(ST.OK, 'us', '');
+
+  // location 形如 https://www.netflix.com/hk-en/title/... → 取第 4 段再截掉 -xx 后缀
+  const parts = String(loc).split('/');
+  if (parts.length < 5) return result(ST.UNKNOWN, '', 'bad location');
+  const seg = String(parts[3] || '').split('-')[0];
+  if (!seg) return result(ST.UNKNOWN, '', 'bad region');
+  return result(ST.OK, seg.toLowerCase(), '');
 }
 
 // ---- Disney+ ----
@@ -480,6 +478,23 @@ async function checkHBOMax(ctx, policy, timeoutMs) {
 // ============================================================
 // ai 组
 // ============================================================
+
+// ---- 出口地区查询 ----
+// 读 Cloudflare trace 拿出口地区码。与各服务检测并行执行，
+// 给所有自身不带地区信息的解锁结果（AI 组 / B站等）做展示兜底。
+async function getExitRegion(ctx, policy, timeoutMs) {
+  const trace = await httpGet(ctx, 'https://chat.openai.com/cdn-cgi/trace', policy, timeoutMs);
+  const ts = await readText(trace);
+  const i = ts.indexOf('loc=');
+  if (i === -1) return result(ST.UNKNOWN, '', 'no loc');
+
+  const rest = ts.slice(i + 4);
+  const nl = rest.indexOf('\n');
+  const loc = (nl === -1 ? rest : rest.slice(0, nl)).trim().toUpperCase();
+  if (!loc) return result(ST.UNKNOWN, '', 'empty loc');
+
+  return result(ST.OK, loc, '');
+}
 
 // ---- ChatGPT（可靠性高）----
 // 先读 cdn-cgi/trace 的 loc 拿到出口地区，再查 OpenAI 官方支持国家列表
@@ -803,7 +818,7 @@ async function checkBiliTW(ctx, policy, timeoutMs) {
 
   const code = Number(b.code);
   if (code === -10403) return result(ST.NO, '', '地区限制');
-  if (code === 0) return result(ST.OK, '', '');
+  if (code === 0) return result(ST.OK, 'tw', '');
   return result(ST.UNKNOWN, '', 'code ' + code);
 }
 
@@ -988,11 +1003,16 @@ export default async function (ctx = {}) {
   }).filter(Boolean);
 
   // ---- 并发探测 ----
-  // 每次刷新都是全新检测，不读不写缓存。
-  // 原因：失败结果同样会进缓存 —— 大尺寸超时产生的一批「未知」会通过缓存
-  // 传染给同策略组下的其他尺寸，把小尺寸也一起带成全灰。
-  const TOTAL_BUDGET_MS = 8000;
+  // 执行预算按检测量分档：≤12 项（小/中尺寸）8 秒足够；大尺寸最多 36 项，
+  // 预算放宽到 30 秒 —— 大尺寸必须在 scriptings 条目里把 timeout 调到 35 以上
+  // （Egern 默认 10 秒、最大 600），否则脚本会先于预算被强杀。
+  const TOTAL_BUDGET_MS = keys.length > 12 ? 30000 : 8000;
   const deadline = Date.now() + TOTAL_BUDGET_MS;
+
+  // 出口地区查询与各服务检测并行，不占用额外耗时
+  const locTask = safeCheck(function () {
+    return getExitRegion(ctx, strategyGroup, timeoutMs);
+  });
 
   const tasks = keys.map(function (key) {
     const fn = CHECKERS[key];
@@ -1004,9 +1024,18 @@ export default async function (ctx = {}) {
   });
 
   const settled = await Promise.all(tasks);
+  const exitRegion = String((await locTask).region || '').toLowerCase();
 
   const results = {};
-  keys.forEach(function (k, idx) { results[k] = settled[idx]; });
+  keys.forEach(function (k, idx) {
+    const r = settled[idx];
+    // 解锁但自身不带地区（AI 组 / B站等）→ 用出口地区兜底，保证每行都显示地区
+    if (r.status === ST.OK && !r.region && exitRegion) {
+      results[k] = result(ST.OK, exitRegion, r.info);
+    } else {
+      results[k] = r;
+    }
+  });
 
   // ---- 渲染 ----
   return render({
@@ -1028,7 +1057,7 @@ export default async function (ctx = {}) {
 function limitForFamily(family) {
   if (family === 'systemSmall') return 6;
   if (family === 'systemMedium') return 12;
-  if (family === 'systemLarge' || family === 'systemExtraLarge') return 24;
+  if (family === 'systemLarge' || family === 'systemExtraLarge') return 36;
   return 6;
 }
 
@@ -1088,7 +1117,7 @@ function render(opts) {
 
   function tail(x) {
     if (x.r.status === ST.OK) {
-      return x.r.region ? String(x.r.region).toUpperCase() : '✓';
+      return x.r.region ? String(x.r.region).toUpperCase() : '--';
     }
     if (x.r.status === ST.RESTRICTED || x.r.status === ST.BANNED) {
       return x.r.info || x.m.label;
@@ -1099,10 +1128,13 @@ function render(opts) {
     return x.m.label;
   }
 
-  // medium / large 统一两列布局，左右各一半
-  const half = Math.ceil(rows.length / 2);
-  const leftRows = rows.slice(0, half);
-  const rightRows = rows.slice(half);
+  // medium 恒两列；large 超过 24 项用三列（36 项两列各 18 行在 extraLarge 上放不下）
+  const colCount = big && rows.length > 24 ? 3 : 2;
+  const perColumn = Math.ceil(rows.length / colCount);
+  const columns = [];
+  for (let i = 0; i < colCount; i++) {
+    columns.push(rows.slice(i * perColumn, (i + 1) * perColumn));
+  }
 
   // 两列布局通用构建（medium / large 共用）；底部区域已整体移除
   function columnNode(list, labelSize, tailSize, iconSize, gap) {
@@ -1315,10 +1347,9 @@ function render(opts) {
           type: 'stack',
           direction: 'row',
           gap: 16,
-          children: [
-            { ...columnNode(leftRows, 13, 12, 14, 6), flex: 1 },
-            { ...columnNode(rightRows, 13, 12, 14, 6), flex: 1 }
-          ]
+          children: columns.map(function (col) {
+            return { ...columnNode(col, 13, 12, 14, 6), flex: 1 };
+          })
         }
       ]
     };
@@ -1355,10 +1386,9 @@ function render(opts) {
         type: 'stack',
         direction: 'row',
         gap: 18,
-        children: [
-          { ...columnNode(leftRows, 12, 11, 13, 7), flex: 1 },
-          { ...columnNode(rightRows, 12, 11, 13, 7), flex: 1 }
-        ]
+        children: columns.map(function (col) {
+          return { ...columnNode(col, 12, 11, 13, 7), flex: 1 };
+        })
       }
     ]
   };
