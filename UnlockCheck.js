@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.12
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.13
 按分组检测当前出口 IP 对流媒体 / AI 服务的解锁情况。
 
 【环境变量配置说明】
@@ -9,7 +9,7 @@ ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.12
 
 【选填项】
 名称：CATEGORY
-值：分组名（全大写），用 | 分隔，可多选。不填默认 OTT（流媒体）
+值：分组名（全大写），用 | 分隔，可多选。不填默认 OTT
 
 OTT：Netflix / Disney+ / YouTube / Prime Video / AppleTV / Spotify
 AI：ChatGPT / Gemini / Claude / Copilot / Grok / Perplexity
@@ -510,12 +510,22 @@ function checkPerplexity(ctx, policy, timeoutMs) {
   ]);
 }
 
-// ---- Apple TV+（显示 AppleTV，美区）----
+// ---- Apple TV+（显示 AppleTV）----
+// 旧版把地区硬编码成 us（美国组时代遗留），任何节点都显示 US，且只拦 403——
+// 连 404/5xx 也会被判成「美区解锁」。现读真实信号：403 / unavailable → 未解锁；
+// 跳回本地区 storefront（如 /tw）→ 显示该地区；直达 200 → 地区留空由出口地区兜底；其余 → 未知。
 async function checkAppleTV(ctx, policy, timeoutMs) {
   const resp = await httpGet(ctx, 'https://tv.apple.com/us', policy, timeoutMs, { redirect: 'manual' });
-  const loc = readHeader(resp && resp.headers, 'location');
-  if (readStatus(resp) === 403 || String(loc).indexOf('unavailable') !== -1) return result(ST.NO, '', '');
-  return result(ST.OK, 'us', '');
+  const st = readStatus(resp);
+  const loc = String(readHeader(resp && resp.headers, 'location'));
+
+  if (st === 403 || loc.indexOf('unavailable') !== -1) return result(ST.NO, '', '');
+  if (st !== 200 && st !== 301 && st !== 302) return result(ST.UNKNOWN, '', 'http ' + st);
+
+  const m =
+    loc.match(/tv\.apple\.com\/([a-z]{2})(?:[/?#]|$)/i) ||
+    loc.match(/^\/([a-z]{2})(?:[/?#]|$)/i);
+  return result(ST.OK, m ? m[1].toLowerCase() : '', '');
 }
 
 // ============================================================
@@ -880,19 +890,34 @@ function render(opts) {
     });
 
     children.push({ type: 'spacer' });
+
+    // 状态图标 + 地区/状态文案：整块包进定宽 stack。
+    // 宽度不随文案变化 → 图标位置固定不漂移，地区从同一起点跟在图标后面写（v1.0.13）。
     children.push({
-      type: 'image',
-      src: x.m.symbol,
-      width: iconSize - 2,
-      height: iconSize - 2,
-      color: x.m.color
-    });
-    children.push({
-      type: 'text',
-      text: tail(x),
-      font: { size: tailSize, weight: 'bold' },
-      textColor: x.m.color,
-      maxLines: 1
+      type: 'stack',
+      direction: 'row',
+      gap: 6,
+      alignItems: 'center',
+      width: iconSize - 2 + 6 + Math.round(tailSize * 3),
+      children: [
+        {
+          type: 'image',
+          src: x.m.symbol,
+          width: iconSize - 2,
+          height: iconSize - 2,
+          color: x.m.color
+        },
+        {
+          type: 'text',
+          text: tail(x),
+          font: { size: tailSize, weight: 'bold' },
+          textColor: x.m.color,
+          textAlign: 'left',
+          maxLines: 1,
+          minScale: 0.65,
+          flex: 1
+        }
+      ]
     });
 
     return { type: 'stack', direction: 'row', gap: 6, children: children };
