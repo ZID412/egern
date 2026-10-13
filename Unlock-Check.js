@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.4
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.5
 按分组检测当前出口 IP 对流媒体 / AI 服务的解锁情况。
 
 【环境变量配置说明】
@@ -1225,8 +1225,8 @@ function render(opts) {
   }
 
   // ---- systemLarge / systemExtraLarge（单列版，v1.1.2）----
-  // 单列最多容纳 18 行（三组全选 6+6+6 正好放满）：字号按 18 行收敛，
-  // 标题行保持大字号不变。
+  // 单列最多容纳 18 行（三组全选 6+6+6 正好放满）：字号按 18 行收敛（v1.1.5 再缩 1pt，
+  // 消除末行与底部横条重叠），标题行保持大字号不变。
   return {
     type: 'widget',
     ...rootBackground(style, gradient),
@@ -1246,7 +1246,7 @@ function render(opts) {
           { type: 'text', text: timeText(), font: { size: 11, weight: 'medium' }, textColor: C.muted, maxLines: 1 }
         ]
       },
-      { ...columnNode(rows, 13, 12, 13, 2), flex: 1 },
+      { ...columnNode(rows, 12, 11, 12, 2), flex: 1 },
       {
         type: 'stack',
         direction: 'row',
