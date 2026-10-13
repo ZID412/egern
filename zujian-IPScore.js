@@ -12,7 +12,7 @@ ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.16
 值：任意填写（如数字 1）；配置后显示完整 IP 地址，不填默认脱敏打码（IPv4 后两段、IPv6 后两段作 *）
 
 名称：WIDGET_STYLE
-值：glass（液态玻璃透壁纸），不填默认黑色背景
+值：glass（液态玻璃），不填默认黑色背景
 
 名称：CF_TOKEN
 值：你的 Cloudflare API Token（配置后才会显示「人机流量比」横条）
