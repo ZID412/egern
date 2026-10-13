@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.8
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.10
 按分组检测当前出口 IP 对流媒体 / AI 服务 / 各地区平台的解锁情况。
 
 【环境变量配置说明】
@@ -16,13 +16,13 @@ ai：ChatGPT / Gemini / Claude / Copilot / Grok / Perplexity
 jp：Abema / niconico / TVer / U-NEXT / FOD / DMM
 hk：myTV SUPER / Viu / TVB / now E / encoreTVB / ViuTV
 tw：B站台湾 / 4GTV / LINE TV / MyVideo / KKTV / Hami Video
-us：Netflix / Disney+ / HBO Max /  Hulu / Peacock / Prime Video
+us：Hulu / Peacock / FuboTV / AppleTV / Tubi / Starz
 
 名称：REFRESH_MINUTES
 值：小组件刷新间隔（单位：分钟，默认 30）
 
 名称：TIMEOUT
-值：单个请求超时（单位：毫秒，默认 2500）
+值：单个请求超时（单位：毫秒，默认 1800）
 
 名称：WIDGET_STYLE
 值：glass（液态玻璃透壁纸），不填默认黑色背景
@@ -148,7 +148,11 @@ const SERVICES = [
   { key: 'hami',   label: 'Hami',         symbol: 'sf-symbol:antenna.radiowaves.left.and.right' },
   // ---- us ----
   { key: 'hulu',   label: 'Hulu',         symbol: 'sf-symbol:display' },
-  { key: 'peacock',label: 'Peacock',      symbol: 'sf-symbol:leaf.fill' }
+  { key: 'peacock',label: 'Peacock',      symbol: 'sf-symbol:leaf.fill' },
+  { key: 'fubo',   label: 'FuboTV',       symbol: 'sf-symbol:sportscourt.fill' },
+  { key: 'atv',    label: 'AppleTV',      symbol: 'sf-symbol:airplay.video.fill' },
+  { key: 'tubi',   label: 'Tubi',         symbol: 'sf-symbol:play.circle' },
+  { key: 'starz',  label: 'Starz',        symbol: 'sf-symbol:star.fill' }
 ];
 
 // 分组 → 服务 key 列表（每项恰好 6 个）
@@ -158,7 +162,7 @@ const GROUPS = {
   jp: ['abema', 'nico', 'tver', 'unext', 'fod', 'dmm'],
   hk: ['mytv', 'viu', 'tvb', 'nowe', 'encore', 'viutv'],
   tw: ['bilitw', '4gtv', 'linetv', 'myvideo', 'kktv', 'hami'],
-  us: ['nf', 'dis', 'hbo', 'hulu', 'peacock', 'pv']
+  us: ['hulu', 'peacock', 'fubo', 'atv', 'tubi', 'starz']
 };
 
 const GROUP_LABELS = {
@@ -410,49 +414,73 @@ async function checkPrimeVideo(ctx, policy, timeoutMs) {
 }
 
 // ---- Spotify ----
-// 向注册接口发固定表单，用返回的 status 判断该地区是否开通
+// 访问 spotify.com 主页，通过地区跳转 / 页面文案判断可用性。
+// 旧注册接口（spclient.wg.spotify.com）写死了固定 token，已被风控/失效，所有节点都被误判为未解锁。
 async function checkSpotify(ctx, policy, timeoutMs) {
-  const body =
-    'birth_day=11&birth_month=11&birth_year=2000&collect_personal_info=undefined&creation_flow=' +
-    '&creation_point=https%3A%2F%2Fwww.spotify.com%2Fhk-en%2F&displayname=Gay%20Lord&gender=male' +
-    '&iagree=1&key=a1e486e2729f46d6bb368d6b2bcda326&platform=www&referrer=&send-email=0' +
-    '&thirdpartyemail=0&identifier_token=AgE6YTvEzkReHNfJpO114514';
+  const resp = await httpGet(ctx, 'https://www.spotify.com/', policy, timeoutMs);
 
-  const headers = {
-    'accept-language': 'en',
-    'user-agent': BROWSER_UA,
-    'content-type': 'application/json',
-    'cache-control': 'no-cache'
-  };
+  const st = readStatus(resp);
+  const body = await readText(resp);
+  const hay = String(body).toLowerCase();
+  const loc = readHeader(resp && resp.headers, 'location');
 
-  const resp = await httpPost(
-    ctx, 'https://spclient.wg.spotify.com/signup/public/v1/account', policy, timeoutMs, body, headers
-  );
-
-  const b = await readJson(resp);
-  if (!b) return result(ST.UNKNOWN, '', 'bad json');
-
-  const st = Number(b.status);
-  if (st === 320) return result(ST.NO, '', '');
-  if (st === 311 && b.is_country_launched) {
-    return result(ST.OK, String(b.country || '').toLowerCase(), '');
+  // 地区限制提示语
+  const block = [
+    'not available',
+    'is not available in',
+    'unavailable in',
+    'unsupported region',
+    'unsupported_country',
+    'spotify is currently not available'
+  ];
+  for (const kw of block) {
+    if (hay.indexOf(kw) !== -1) return result(ST.NO, '', '');
   }
-  return result(ST.NO, '', '');
+
+  if (st !== 200 && st !== 301 && st !== 302 && st !== 0) {
+    return result(ST.UNKNOWN, '', 'status ' + st);
+  }
+
+  // 尝试从重定向地址解析地区码，例如 /hk-en/ /us/ 等
+  const m = String(loc || '').match(/spotify\.com\/([a-z]{2})[-_\/]/i)
+    || String(loc || '').match(/spotify\.com\/([a-z]{2})$/i)
+    || hay.match(/spotify\.com\/([a-z]{2})[-_\/]/i);
+  if (m) return result(ST.OK, m[1].toLowerCase(), '');
+
+  return result(ST.OK, '', '');
 }
 
 // ---- HBO Max ----
+// 访问 max.com 新域名。HBO Max 已合并为 Max，继续检测 hbomax.com 会误判。
 async function checkHBOMax(ctx, policy, timeoutMs) {
-  const resp = await httpGet(ctx, 'https://www.hbomax.com/', policy, timeoutMs, { redirect: 'manual' });
+  const resp = await httpGet(ctx, 'https://www.max.com/', policy, timeoutMs);
 
-  const s = await readText(resp);
-  if (s && s.indexOf('geo-availability') !== -1) return result(ST.NO, '', '');
-
+  const st = readStatus(resp);
+  const body = await readText(resp);
+  const hay = String(body).toLowerCase();
   const loc = readHeader(resp && resp.headers, 'location');
-  const parts = String(loc).split('/');
-  const region = parts.length >= 4 ? String(parts[3] || '') : '';
-  if (!region) return result(ST.UNKNOWN, '', 'no region');
 
-  return result(ST.OK, region.toUpperCase(), '');
+  const block = [
+    'not available',
+    'is not available in',
+    'unavailable in',
+    'unsupported region',
+    'geo-availability',
+    'max is not available'
+  ];
+  for (const kw of block) {
+    if (hay.indexOf(kw) !== -1) return result(ST.NO, '', '');
+  }
+
+  if (st !== 200 && st !== 301 && st !== 302 && st !== 0) {
+    return result(ST.UNKNOWN, '', 'status ' + st);
+  }
+
+  // 尝试从跳转地址解析地区码，例如 max.com/xx/ 或 play.max.com/xx/
+  const m = String(loc || '').match(/(?:www\.|play\.)?max\.com\/([a-z]{2})([\/_\-]|$)/i);
+  if (m) return result(ST.OK, m[1].toUpperCase(), '');
+
+  return result(ST.OK, '', '');
 }
 
 // ============================================================
@@ -888,6 +916,38 @@ async function checkPeacock(ctx, policy, timeoutMs) {
   return result(ST.OK, 'us', '');
 }
 
+// ---- FuboTV（美区）----
+async function checkFuboTV(ctx, policy, timeoutMs) {
+  const resp = await httpGet(ctx, 'https://www.fubo.tv/welcome', policy, timeoutMs, { redirect: 'manual' });
+  const loc = readHeader(resp && resp.headers, 'location');
+  if (readStatus(resp) === 403 || String(loc).indexOf('unavailable') !== -1) return result(ST.NO, '', '');
+  return result(ST.OK, 'us', '');
+}
+
+// ---- Apple TV+（显示 AppleTV，美区）----
+async function checkAppleTV(ctx, policy, timeoutMs) {
+  const resp = await httpGet(ctx, 'https://tv.apple.com/us', policy, timeoutMs, { redirect: 'manual' });
+  const loc = readHeader(resp && resp.headers, 'location');
+  if (readStatus(resp) === 403 || String(loc).indexOf('unavailable') !== -1) return result(ST.NO, '', '');
+  return result(ST.OK, 'us', '');
+}
+
+// ---- Tubi（美区）----
+async function checkTubi(ctx, policy, timeoutMs) {
+  const resp = await httpGet(ctx, 'https://tubitv.com', policy, timeoutMs, { redirect: 'manual' });
+  const loc = readHeader(resp && resp.headers, 'location');
+  if (readStatus(resp) === 403 || String(loc).indexOf('unavailable') !== -1) return result(ST.NO, '', '');
+  return result(ST.OK, 'us', '');
+}
+
+// ---- Starz（美区）----
+async function checkStarz(ctx, policy, timeoutMs) {
+  const resp = await httpGet(ctx, 'https://www.starz.com/us/en', policy, timeoutMs, { redirect: 'manual' });
+  const loc = readHeader(resp && resp.headers, 'location');
+  if (readStatus(resp) === 403 || String(loc).indexOf('unavailable') !== -1) return result(ST.NO, '', '');
+  return result(ST.OK, 'us', '');
+}
+
 // ============================================================
 // 超时兜底：按出口地区推断支持状态
 // ============================================================
@@ -903,7 +963,7 @@ const SUPPORT_LISTS = {
   encore: ['hk', 'mo', 'tw', 'sg', 'my', 'au'],
   viutv: ['hk'],
   bilitw: ['tw'], '4gtv': ['tw'], linetv: ['tw'], myvideo: ['tw'], kktv: ['tw'], hami: ['tw'],
-  hulu: ['us'], peacock: ['us']
+  hulu: ['us'], peacock: ['us'], fubo: ['us'], atv: ['us'], tubi: ['us'], starz: ['us']
 };
 
 // 全球型流媒体的排除表：不在表内即视为支持
@@ -964,7 +1024,11 @@ const CHECKERS = {
   kktv: checkKKTV,
   hami: checkHamiVideo,
   hulu: checkHulu,
-  peacock: checkPeacock
+  peacock: checkPeacock,
+  fubo: checkFuboTV,
+  atv: checkAppleTV,
+  tubi: checkTubi,
+  starz: checkStarz
 };
 
 // ============================================================
@@ -1084,7 +1148,8 @@ export default async function (ctx = {}) {
     list: list,
     results: results,
     group: strategyGroup,
-    categories: groups
+    categories: groups,
+    exitRegion: exitRegion
   });
 }
 
@@ -1101,9 +1166,18 @@ function timeText() {
 function unlockBar(okCount, total, okColor, noColor, height) {
   const ratio = total > 0 ? okCount / total : 0;
   const safe = Math.min(Math.max(ratio, 0), 1);
-  // 全解锁时铺满；否则至少留 1% 避免整条消失
-  const filled = safe >= 1 ? 100 : Math.max(Math.round(safe * 1000) / 10, 1);
-  const empty = 100 - filled;
+
+  let filled, empty;
+  if (okCount <= 0) {
+    filled = 0;
+    empty = 100;
+  } else if (okCount >= total) {
+    filled = 100;
+    empty = 0;
+  } else {
+    filled = Math.max(Math.round(safe * 1000) / 10, 1);
+    empty = Math.max(100 - filled, 1);
+  }
 
   return {
     type: 'stack',
@@ -1135,6 +1209,7 @@ function render(opts) {
   const style = opts.style;
   const results = opts.results;
   const group = opts.group;
+  const exitRegion = opts.exitRegion || '';
 
   const list = opts.list.slice(0, limitForFamily(family));
   const big = family === 'systemLarge' || family === 'systemExtraLarge';
@@ -1186,7 +1261,9 @@ function render(opts) {
 
   function tail(x) {
     if (x.r.status === ST.OK) {
-      return x.r.region ? String(x.r.region).toUpperCase() : '--';
+      // 解锁但没拿到地区 → 用出口地区兜底，避免显示 --
+      const region = x.r.region || exitRegion;
+      return region ? String(region).toUpperCase() : '--';
     }
     if (x.r.status === ST.RESTRICTED || x.r.status === ST.BANNED) {
       return x.r.info || x.m.label;
