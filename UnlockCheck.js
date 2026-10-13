@@ -1,6 +1,6 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.11
-按分组检测当前出口 IP 对流媒体 / AI 服务 / 各地区平台的解锁情况。
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.12
+按分组检测当前出口 IP 对流媒体 / AI 服务的解锁情况。
 
 【环境变量配置说明】
 【必填项】
@@ -11,12 +11,8 @@ ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.11
 名称：CATEGORY
 值：分组名（全大写），用 | 分隔，可多选。不填默认 OTT（流媒体）
 
-OTT：Netflix / Disney+ / YouTube / Prime Video / HBO Max / Spotify
+OTT：Netflix / Disney+ / YouTube / Prime Video / AppleTV / Spotify
 AI：ChatGPT / Gemini / Claude / Copilot / Grok / Perplexity
-JP：Abema / Niconico / TVer / U-NEXT / FOD / DMM
-HK：MyTV SUPER / Viu / TVB / Now E / EncoreTVB / ViuTV
-TW：B站台湾 / 4GTV / LINE TV / MyVideo / KKTV / Hami Video
-US：Hulu / Peacock / FuboTV / AppleTV / Tubi / Starz
 
 名称：REFRESH_MINUTES
 值：小组件刷新间隔（单位：分钟，默认 30）
@@ -25,12 +21,12 @@ US：Hulu / Peacock / FuboTV / AppleTV / Tubi / Starz
 值：单个请求超时（单位：毫秒，默认 1800）
 
 名称：WIDGET_STYLE
-值：glass（液态玻璃透壁纸），不填默认黑色背景
+值：glass（液态玻璃），不填默认黑色背景
 
 【状态含义】
 - 解锁：该服务在当前出口可用，右侧显示地区码
 - 未解锁：服务可达，但当前地区不支持
-- 受限：部分可用（Netflix 仅自制剧 / ChatGPT 限流 / Abema 海外限定）
+- 受限：部分可用（Netflix 仅自制剧 / ChatGPT 限流）
 - 封锁：IP 被服务方拉黑（Netflix 403 / OpenAI VPN 拦截）
 - 未知：探测失败（超时、网络错误、接口变更）
 
@@ -46,9 +42,6 @@ US：Hulu / Peacock / FuboTV / AppleTV / Tubi / Starz
 // 导致误判成「未解锁」。整套头与 MediaUnlockTest 的 GET() 保持一致。
 const BROWSER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36';
-
-// Abema 走安卓客户端接口，必须用 Dalvik UA，用浏览器头会被拒
-const DALVIK_UA = 'Dalvik/2.1.0 (Linux; U; Android 9; ALP-AL00 Build/HUAWEIALP-AL00)';
 
 const BROWSER_HEADERS = {
   'user-agent': BROWSER_UA,
@@ -90,13 +83,6 @@ const GPT_SUPPORT = new Set([
   'PS', 'KR', 'TW', 'TZ', 'TL', 'GB'
 ]);
 
-// TVer / encoreTVB 都走 Brightcove 播放接口，需要在 Accept 里带各自的公钥
-const TVER_ACCEPT =
-  'application/json;pk=BCpkADawqM0_rzsjsYbC1k1wlJLU4HiAtfzjxdUmfvvLUQB-Ax6VA-p-9wOEZbCEm3u95qq2Y1CQQW1K9tPaMma9iAqUqhpISCmyXrgnlpx9soEmoVNuQpiyGsTpePGumWxSs1YoKziYB6Wz';
-
-const ENCORE_ACCEPT =
-  'application/json;pk=BCpkADawqM2Gpjj8SlY2mj4FgJJMfUpxTNtHWXOItY1PvamzxGstJbsgc-zFOHkCVcKeeOhPUd9MNHEGJoVy1By1Hrlh9rOXArC5M5MTcChJGU6maC8qhQ4Y8W-QYtvi8Nq34bUb9IOvoKBLeNF4D9Avskfe9rtMoEjj6ImXu_i4oIhYS0dx7x1AgHvtAaZFFhq3LBGtR-ZcsSqxNzVg-4PRUI9zcytQkk_YJXndNSfhVdmYmnxkgx1XXisGv1FG5GOmEK4jZ_Ih0riX5icFnHrgniADr4bA2G7TYh4OeGBrYLyFN_BDOvq3nFGrXVWrTLhaYyjxOr4rZqJPKK2ybmMsq466Ke1ZtE-wNQ';
-
 // 状态枚举
 const ST = {
   OK: 'ok',
@@ -116,7 +102,7 @@ const SERVICES = [
   { key: 'dis',    label: 'Disney+',      symbol: 'sf-symbol:sparkles' },
   { key: 'yt',     label: 'YouTube',      symbol: 'sf-symbol:play.rectangle.fill' },
   { key: 'pv',     label: 'Prime',        symbol: 'sf-symbol:play.circle.fill' },
-  { key: 'hbo',    label: 'HBO Max',      symbol: 'sf-symbol:film.fill' },
+  { key: 'atv',    label: 'AppleTV',      symbol: 'sf-symbol:appletv.fill' },
   { key: 'sp',     label: 'Spotify',      symbol: 'sf-symbol:music.note' },
   // ---- ai ----
   { key: 'gpt',    label: 'ChatGPT',      symbol: 'sf-symbol:bubble.left.fill' },
@@ -124,54 +110,18 @@ const SERVICES = [
   { key: 'claude', label: 'Claude',       symbol: 'sf-symbol:bubble.left.and.bubble.right.fill' },
   { key: 'copilot',label: 'Copilot',      symbol: 'sf-symbol:laptopcomputer' },
   { key: 'grok',   label: 'Grok',         symbol: 'sf-symbol:bolt.fill' },
-  { key: 'pplx',   label: 'Pplx',         symbol: 'sf-symbol:magnifyingglass' },
-  // ---- jp ----
-  { key: 'abema',  label: 'Abema',        symbol: 'sf-symbol:antenna.radiowaves.left.and.right' },
-  { key: 'nico',   label: 'Niconico',     symbol: 'sf-symbol:video.fill' },
-  { key: 'tver',   label: 'TVer',         symbol: 'sf-symbol:rectangle.on.rectangle' },
-  { key: 'unext',  label: 'U-NEXT',       symbol: 'sf-symbol:square.stack' },
-  { key: 'fod',    label: 'FOD',          symbol: 'sf-symbol:film' },
-  { key: 'dmm',    label: 'DMM',          symbol: 'sf-symbol:bag.fill' },
-  // ---- hk ----
-  { key: 'mytv',   label: 'MyTV',         symbol: 'sf-symbol:desktopcomputer' },
-  { key: 'viu',    label: 'Viu',          symbol: 'sf-symbol:tv' },
-  { key: 'tvb',    label: 'TVB',          symbol: 'sf-symbol:tv.inset.filled' },
-  { key: 'nowe',   label: 'Now E',        symbol: 'sf-symbol:circle.grid.2x2' },
-  { key: 'encore', label: 'Encore',       symbol: 'sf-symbol:repeat' },
-  { key: 'viutv',  label: 'ViuTV',        symbol: 'sf-symbol:play.rectangle' },
-  // ---- tw ----
-  { key: 'bilitw', label: 'B站 台湾',      symbol: 'sf-symbol:play.square.fill' },
-  { key: '4gtv',   label: '4GTV',         symbol: 'sf-symbol:square.grid.2x2' },
-  { key: 'linetv', label: 'LINE',         symbol: 'sf-symbol:message.fill' },
-  { key: 'myvideo',label: 'MyVideo',      symbol: 'sf-symbol:play.rectangle' },
-  { key: 'kktv',   label: 'KKTV',         symbol: 'sf-symbol:play.square' },
-  { key: 'hami',   label: 'Hami',         symbol: 'sf-symbol:antenna.radiowaves.left.and.right' },
-  // ---- us ----
-  { key: 'hulu',   label: 'Hulu',         symbol: 'sf-symbol:display' },
-  { key: 'peacock',label: 'Peacock',      symbol: 'sf-symbol:leaf.fill' },
-  { key: 'fubo',   label: 'FuboTV',       symbol: 'sf-symbol:sportscourt.fill' },
-  { key: 'atv',    label: 'AppleTV',      symbol: 'sf-symbol:appletv.fill' },
-  { key: 'tubi',   label: 'Tubi',         symbol: 'sf-symbol:play.circle' },
-  { key: 'starz',  label: 'Starz',        symbol: 'sf-symbol:star.fill' }
+  { key: 'pplx',   label: 'Pplx',         symbol: 'sf-symbol:magnifyingglass' }
 ];
 
 // 分组 → 服务 key 列表（每项恰好 6 个）
 const GROUPS = {
-  OTT: ['nf', 'dis', 'yt', 'pv', 'hbo', 'sp'],
-  AI: ['gpt', 'gemini', 'claude', 'copilot', 'grok', 'pplx'],
-  JP: ['abema', 'nico', 'tver', 'unext', 'fod', 'dmm'],
-  HK: ['mytv', 'viu', 'tvb', 'nowe', 'encore', 'viutv'],
-  TW: ['bilitw', '4gtv', 'linetv', 'myvideo', 'kktv', 'hami'],
-  US: ['hulu', 'peacock', 'fubo', 'atv', 'tubi', 'starz']
+  OTT: ['nf', 'dis', 'yt', 'pv', 'atv', 'sp'],
+  AI: ['gpt', 'gemini', 'claude', 'copilot', 'grok', 'pplx']
 };
 
 const GROUP_LABELS = {
   OTT: '流媒体',
-  AI: 'AI 服务',
-  JP: '日本',
-  HK: '香港',
-  TW: '台湾',
-  US: '美国'
+  AI: 'AI 服务'
 };
 
 const DEFAULT_GROUP = 'OTT';
@@ -450,46 +400,13 @@ async function checkSpotify(ctx, policy, timeoutMs) {
   return result(ST.OK, '', '');
 }
 
-// ---- HBO Max ----
-// 访问 max.com 新域名。HBO Max 已合并为 Max，继续检测 hbomax.com 会误判。
-async function checkHBOMax(ctx, policy, timeoutMs) {
-  const resp = await httpGet(ctx, 'https://www.max.com/', policy, timeoutMs);
-
-  const st = readStatus(resp);
-  const body = await readText(resp);
-  const hay = String(body).toLowerCase();
-  const loc = readHeader(resp && resp.headers, 'location');
-
-  const block = [
-    'not available',
-    'is not available in',
-    'unavailable in',
-    'unsupported region',
-    'geo-availability',
-    'max is not available'
-  ];
-  for (const kw of block) {
-    if (hay.indexOf(kw) !== -1) return result(ST.NO, '', '');
-  }
-
-  if (st !== 200 && st !== 301 && st !== 302 && st !== 0) {
-    return result(ST.UNKNOWN, '', 'status ' + st);
-  }
-
-  // 尝试从跳转地址解析地区码，例如 max.com/xx/ 或 play.max.com/xx/
-  const m = String(loc || '').match(/(?:www\.|play\.)?max\.com\/([a-z]{2})([\/_\-]|$)/i);
-  if (m) return result(ST.OK, m[1].toUpperCase(), '');
-
-  return result(ST.OK, '', '');
-}
-
 // ============================================================
 // ai 组
 // ============================================================
 
 // ---- 出口地区查询 ----
 // 读 Cloudflare trace 拿出口地区码。与各服务检测并行执行，
-// 给所有自身不带地区信息的解锁结果（AI 组 / B站等）做展示兜底。
+// 给所有自身不带地区信息的解锁结果（AI 组等）做展示兜底。
 async function getExitRegion(ctx, policy, timeoutMs) {
   const trace = await httpGet(ctx, 'https://chat.openai.com/cdn-cgi/trace', policy, timeoutMs);
   const ts = await readText(trace);
@@ -593,356 +510,9 @@ function checkPerplexity(ctx, policy, timeoutMs) {
   ]);
 }
 
-// ============================================================
-// jp 组
-// ============================================================
-
-// ---- Abema（日本）----
-async function checkAbema(ctx, policy, timeoutMs) {
-  const resp = await httpGet(
-    ctx, 'https://api.abema.io/v1/ip/check?device=android', policy, timeoutMs,
-    { headers: { 'user-agent': DALVIK_UA } }
-  );
-
-  const b = await readJson(resp);
-  if (!b) return result(ST.UNKNOWN, '', 'bad json');
-
-  const code = String(b.isoCountryCode || b.IsoCountryCode || '').toUpperCase();
-  if (code === 'JP') return result(ST.OK, 'jp', '');
-  if (!code) return result(ST.UNKNOWN, '', 'no code');
-
-  // 非日本：Abema 仍有部分海外可看内容，按受限处理而不是直接判未解锁
-  return result(ST.RESTRICTED, code, '海外限定');
-}
-
-// ---- niconico（日本）----
-async function checkNiconico(ctx, policy, timeoutMs) {
-  const resp = await httpGet(ctx, 'https://www.nicovideo.jp/watch/so40278367', policy, timeoutMs);
-  const s = await readText(resp);
-  if (!s) return result(ST.UNKNOWN, '', 'empty body');
-
-  if (s.indexOf('同じ地域') !== -1) return result(ST.NO, '', '');
-  return result(ST.OK, 'jp', '');
-}
-
-// ---- TVer（日本）----
-// Brightcove 播放接口，需要在 Accept 里带 TVer 的公钥
-async function checkTVer(ctx, policy, timeoutMs) {
-  const resp = await httpGet(
-    ctx,
-    'https://edge.api.brightcove.com/playback/v1/accounts/5102072605001/videos/ref%3Akaguyasama_01',
-    policy,
-    timeoutMs,
-    { headers: { 'user-agent': BROWSER_UA, accept: TVER_ACCEPT } }
-  );
-
-  const s = await readText(resp);
-  if (!s) return result(ST.UNKNOWN, '', 'empty body');
-
-  if (s.indexOf('error_subcode') !== -1) return result(ST.NO, '', '');
-  return result(ST.OK, 'jp', '');
-}
-
-// ---- U-NEXT（日本）----
-// result_status：475 / 200 = 可播放，467 = 地区限制
-async function checkUNext(ctx, policy, timeoutMs) {
-  const resp = await httpGet(
-    ctx,
-    'https://video-api.unext.jp/api/1/player?entity%5B%5D=playlist_url&episode_code=ED00148814&title_code=SID0028118&keyonly_flg=0&play_mode=caption&bitrate_low=1500',
-    policy,
-    timeoutMs
-  );
-
-  const b = await readJson(resp);
-  if (!b) return result(ST.UNKNOWN, '', 'bad json');
-
-  const st = Number(
-    b && b.data && b.data.entities_data && b.data.entities_data.playlist_url
-      ? b.data.entities_data.playlist_url.result_status
-      : NaN
-  );
-
-  if (st === 475 || st === 200) return result(ST.OK, 'jp', '');
-  if (st === 467) return result(ST.NO, '', '地区限制');
-  return result(ST.UNKNOWN, '', 'status ' + st);
-}
-
-// ---- FOD（日本，富士台）----
-// 返回 XML，含 true = 可看，false = 地区限制
-async function checkFOD(ctx, policy, timeoutMs) {
-  const resp = await httpGet(
-    ctx, 'https://geocontrol1.stream.ne.jp/fod-geo/check.xml?time=1624504256', policy, timeoutMs
-  );
-
-  const s = await readText(resp);
-  if (!s) return result(ST.UNKNOWN, '', 'empty body');
-
-  if (s.indexOf('true') !== -1) return result(ST.OK, 'jp', '');
-  if (s.indexOf('false') !== -1) return result(ST.NO, '', '');
-  return result(ST.UNKNOWN, '', 'unknown');
-}
-
-// ---- DMM（日本）----
-async function checkDMM(ctx, policy, timeoutMs) {
-  const resp = await httpGet(ctx, 'https://bitcoin.dmm.com', policy, timeoutMs);
-  const s = await readText(resp);
-  if (!s) return result(ST.UNKNOWN, '', 'empty body');
-
-  if (s.indexOf('This page is not available in your area') !== -1) return result(ST.NO, '', '');
-  if (s.indexOf('暗号資産') !== -1) return result(ST.OK, 'jp', '');
-  return result(ST.NO, '', '');
-}
-
-// ============================================================
-// hk 组
-// ============================================================
-
-// ---- myTV SUPER（香港）----
-async function checkMyTvSuper(ctx, policy, timeoutMs) {
-  const resp = await httpGet(
-    ctx, 'https://www.mytvsuper.com/api/auth/getSession/self/', policy, timeoutMs,
-    { headers: { 'user-agent': BROWSER_UA, 'content-type': 'application/json' } }
-  );
-
-  const b = await readJson(resp);
-  if (!b) return result(ST.UNKNOWN, '', 'bad json');
-
-  if (Number(b.region) === 1) return result(ST.OK, 'hk', '');
-  return result(ST.NO, '', '');
-}
-
-// ---- Viu（香港/东南亚）----
-// 原实现用 split('/')[4] 按固定段索引取地区码，太脆弱：跳转地址只要多一段或少一段
-// 就会取空，直接掉进「未知」。v1.0.2 改为先判 no-service 关键字，再用正则从路径里
-// 抠两位地区码（/hk/、/sg/ 之类），对格式变化不敏感。
-async function checkViu(ctx, policy, timeoutMs) {
-  const resp = await httpGet(ctx, 'https://www.viu.com', policy, timeoutMs, { redirect: 'manual' });
-  const loc = readHeader(resp && resp.headers, 'location');
-
-  if (!loc) return result(ST.NO, '', '');
-
-  if (String(loc).indexOf('no-service') !== -1) return result(ST.NO, '', '');
-
-  const m = String(loc).match(/\/([a-z]{2})(?:[/-]|$)/i);
-  if (m && m[1]) return result(ST.OK, m[1].toLowerCase(), '');
-
-  // 拿不到地区码但也没被拦，按解锁处理（不编造地区）
-  return result(ST.OK, '', '');
-}
-
-// ---- TVB Anywhere（香港）----
-async function checkTVB(ctx, policy, timeoutMs) {
-  const resp = await httpGet(
-    ctx, 'https://uapisfm.tvbanywhere.com.sg/geoip/check/platform/android', policy, timeoutMs
-  );
-
-  const b = await readJson(resp);
-  if (!b) return result(ST.UNKNOWN, '', 'bad json');
-
-  if (b.allow_in_this_country) {
-    return result(ST.OK, String(b.country || '').toLowerCase(), '');
-  }
-  return result(ST.NO, '', '');
-}
-
-// ---- now E（香港）----
-// responseCode：PRODUCT_INFORMATION_INCOMPLETE = 可看，GEO_CHECK_FAIL = 地区限制
-async function checkNowE(ctx, policy, timeoutMs) {
-  const body =
-    '{"contentId":"202105121370235","contentType":"Vod","pin":"",' +
-    '"deviceId":"W-60b8d30a-9294-d251-617b-c12f9d0c","deviceType":"WEB"}';
-
-  const resp = await httpPost(
-    ctx, 'https://webtvapi.nowe.com/16/1/getVodURL', policy, timeoutMs, body, jsonHeaders()
-  );
-
-  const b = await readJson(resp);
-  if (!b) return result(ST.UNKNOWN, '', 'bad json');
-
-  const code = String(b.responseCode || b.ResponseCode || '');
-  if (code === 'PRODUCT_INFORMATION_INCOMPLETE') return result(ST.OK, 'hk', '');
-  if (code === 'GEO_CHECK_FAIL') return result(ST.NO, '', '');
-  return result(ST.UNKNOWN, '', code || 'unknown');
-}
-
-// ---- encoreTVB（香港）----
-async function checkEncoreTVB(ctx, policy, timeoutMs) {
-  const resp = await httpGet(
-    ctx,
-    'https://edge.api.brightcove.com/playback/v1/accounts/5324042807001/videos/6005570109001',
-    policy,
-    timeoutMs,
-    {
-      headers: {
-        'user-agent': BROWSER_UA,
-        accept: ENCORE_ACCEPT,
-        origin: 'https://www.encoretvb.com'
-      }
-    }
-  );
-
-  const b = await readJson(resp);
-  if (!b) return result(ST.UNKNOWN, '', 'bad json');
-
-  if (b.error_subcode === 'CLIENT_GEO') return result(ST.NO, '', '');
-  if (b.account_id && String(b.account_id) !== '0') return result(ST.OK, 'hk', '');
-  return result(ST.UNKNOWN, '', 'unknown');
-}
-
-// ---- ViuTV（香港）----
-async function checkViuTV(ctx, policy, timeoutMs) {
-  const body =
-    '{"callerReferenceNo":"20210726112323","contentId":"099","contentType":"Channel",' +
-    '"channelno":"099","mode":"prod","deviceId":"29b3cb117a635d5b56","deviceType":"ANDROID_WEB"}';
-
-  const resp = await httpPost(
-    ctx, 'https://api.viu.now.com/p8/3/getLiveURL', policy, timeoutMs, body, jsonHeaders()
-  );
-
-  const b = await readJson(resp);
-  if (!b) return result(ST.UNKNOWN, '', 'bad json');
-
-  const code = String(b.responseCode || b.ResponseCode || '');
-  if (code === 'SUCCESS') return result(ST.OK, 'hk', '');
-  if (code === 'GEO_CHECK_FAIL') return result(ST.NO, '', '');
-  return result(ST.UNKNOWN, '', code || 'unknown');
-}
-
-// ============================================================
-// tw 组
-// ============================================================
-
-// ---- B站 台湾 ----
-async function checkBiliTW(ctx, policy, timeoutMs) {
-  const resp = await httpGet(
-    ctx,
-    'https://api.bilibili.com/pgc/player/web/playurl?avid=50762638&cid=100279344&qn=0&type=&otype=json&ep_id=268176&fourk=1&fnver=0&fnval=16&module=bangumi',
-    policy,
-    timeoutMs
-  );
-
-  const b = await readJson(resp);
-  if (!b) return result(ST.UNKNOWN, '', 'bad json');
-
-  const code = Number(b.code);
-  if (code === -10403) return result(ST.NO, '', '地区限制');
-  if (code === 0) return result(ST.OK, 'tw', '');
-  return result(ST.UNKNOWN, '', 'code ' + code);
-}
-
-// ---- 4GTV（台湾）----
-async function check4GTV(ctx, policy, timeoutMs) {
-  const body =
-    'value=D33jXJ0JVFkBqV%2BZSi1mhPltbejAbPYbDnyI9hmfqjKaQwRQdj7ZKZRAdb16%2FRUrE8vGXLFfNKBLKJv%2BfDSiD%2BZJlUa5Msps2P4IWuTrUP1%2BCnS255YfRadf%2BKLUhIPj';
-
-  const resp = await httpPost(
-    ctx, 'https://api2.4gtv.tv//Vod/GetVodUrl3', policy, timeoutMs, body, formHeaders()
-  );
-
-  const b = await readJson(resp);
-  if (!b) return result(ST.UNKNOWN, '', 'bad json');
-
-  if (b.success === true) return result(ST.OK, 'tw', '');
-  if (b.success === false) return result(ST.NO, '', '');
-  return result(ST.UNKNOWN, '', 'unknown');
-}
-
-// ---- LINE TV（台湾）----
-// countryCode 228 = 台湾
-async function checkLineTV(ctx, policy, timeoutMs) {
-  const resp = await httpGet(
-    ctx, 'https://www.linetv.tw/api/part/11829/eps/1/part?chocomemberId=', policy, timeoutMs
-  );
-
-  const b = await readJson(resp);
-  if (!b) return result(ST.UNKNOWN, '', 'bad json');
-
-  if (Number(b.countryCode) === 228) return result(ST.OK, 'tw', '');
-  return result(ST.NO, '', '');
-}
-
-// ---- MyVideo（台湾）----
-async function checkMyVideo(ctx, policy, timeoutMs) {
-  const resp = await httpGet(ctx, 'https://www.myvideo.net.tw/login.do', policy, timeoutMs);
-  const s = await readText(resp);
-  if (!s) return result(ST.UNKNOWN, '', 'empty body');
-
-  if (s.indexOf('serviceAreaBlock') !== -1) return result(ST.NO, '', '');
-  return result(ST.OK, 'tw', '');
-}
-
-// ---- KKTV（台湾）----
-async function checkKKTV(ctx, policy, timeoutMs) {
-  const resp = await httpGet(ctx, 'https://api.kktv.me/v3/ipcheck', policy, timeoutMs);
-
-  const b = await readJson(resp);
-  if (!b || !b.data) return result(ST.UNKNOWN, '', 'bad json');
-
-  const country = String(b.data.country || '').toUpperCase();
-  if (country === 'TW' && b.data.is_allowed) return result(ST.OK, 'tw', '');
-  return result(ST.NO, '', '');
-}
-
-// ---- Hami Video（台湾，中华电信）----
-async function checkHamiVideo(ctx, policy, timeoutMs) {
-  const resp = await httpGet(
-    ctx, 'https://hamivideo.hinet.net/api/play.do?id=OTT_VOD_0000249064&freeProduct=1', policy, timeoutMs
-  );
-
-  const b = await readJson(resp);
-  if (!b) return result(ST.UNKNOWN, '', 'bad json');
-
-  if (String(b.code) === '06001-107') return result(ST.OK, 'tw', '');
-  return result(ST.NO, '', '');
-}
-
-// ============================================================
-// us 组
-// ============================================================
-
-// ---- Hulu（美区）----
-async function checkHulu(ctx, policy, timeoutMs) {
-  const resp = await httpGet(ctx, 'https://www.hulu.com', policy, timeoutMs);
-  if (readStatus(resp) === 403) return result(ST.NO, '', '');
-  return result(ST.OK, 'us', '');
-}
-
-// ---- Peacock（美区）----
-async function checkPeacock(ctx, policy, timeoutMs) {
-  const resp = await httpGet(ctx, 'https://www.peacocktv.com/', policy, timeoutMs, { redirect: 'manual' });
-  const loc = readHeader(resp && resp.headers, 'location');
-
-  if (String(loc).indexOf('unavailable') !== -1) return result(ST.NO, '', '');
-  return result(ST.OK, 'us', '');
-}
-
-// ---- FuboTV（美区）----
-async function checkFuboTV(ctx, policy, timeoutMs) {
-  const resp = await httpGet(ctx, 'https://www.fubo.tv/welcome', policy, timeoutMs, { redirect: 'manual' });
-  const loc = readHeader(resp && resp.headers, 'location');
-  if (readStatus(resp) === 403 || String(loc).indexOf('unavailable') !== -1) return result(ST.NO, '', '');
-  return result(ST.OK, 'us', '');
-}
-
 // ---- Apple TV+（显示 AppleTV，美区）----
 async function checkAppleTV(ctx, policy, timeoutMs) {
   const resp = await httpGet(ctx, 'https://tv.apple.com/us', policy, timeoutMs, { redirect: 'manual' });
-  const loc = readHeader(resp && resp.headers, 'location');
-  if (readStatus(resp) === 403 || String(loc).indexOf('unavailable') !== -1) return result(ST.NO, '', '');
-  return result(ST.OK, 'us', '');
-}
-
-// ---- Tubi（美区）----
-async function checkTubi(ctx, policy, timeoutMs) {
-  const resp = await httpGet(ctx, 'https://tubitv.com', policy, timeoutMs, { redirect: 'manual' });
-  const loc = readHeader(resp && resp.headers, 'location');
-  if (readStatus(resp) === 403 || String(loc).indexOf('unavailable') !== -1) return result(ST.NO, '', '');
-  return result(ST.OK, 'us', '');
-}
-
-// ---- Starz（美区）----
-async function checkStarz(ctx, policy, timeoutMs) {
-  const resp = await httpGet(ctx, 'https://www.starz.com/us/en', policy, timeoutMs, { redirect: 'manual' });
   const loc = readHeader(resp && resp.headers, 'location');
   if (readStatus(resp) === 403 || String(loc).indexOf('unavailable') !== -1) return result(ST.NO, '', '');
   return result(ST.OK, 'us', '');
@@ -952,19 +522,9 @@ async function checkStarz(ctx, policy, timeoutMs) {
 // 超时兜底：按出口地区推断支持状态
 // ============================================================
 
-// 地区型服务的支持地区白名单（小写两位地区码）。
-// 检测超时/失败时，用出口地区查这张表给出推断结论，避免整卡「未知」。
-const SUPPORT_LISTS = {
-  abema: ['jp'], nico: ['jp'], tver: ['jp'], unext: ['jp'], fod: ['jp'], dmm: ['jp'],
-  mytv: ['hk'],
-  viu: ['hk', 'mo', 'sg', 'my', 'th', 'ph', 'id', 'in', 'kh', 'vn'],
-  tvb: ['hk', 'mo', 'tw', 'sg', 'my', 'au', 'gb', 'us'],
-  nowe: ['hk'],
-  encore: ['hk', 'mo', 'tw', 'sg', 'my', 'au'],
-  viutv: ['hk'],
-  bilitw: ['tw'], '4gtv': ['tw'], linetv: ['tw'], myvideo: ['tw'], kktv: ['tw'], hami: ['tw'],
-  hulu: ['us'], peacock: ['us'], fubo: ['us'], atv: ['us'], tubi: ['us'], starz: ['us']
-};
+// 地区型服务的支持地区白名单。地区分组已移除，此表暂不使用；
+// 检测超时/失败统一走下方 GLOBAL_BLOCK 全球型兜底。
+const SUPPORT_LISTS = {};
 
 // 全球型流媒体的排除表：不在表内即视为支持
 const GLOBAL_BLOCK = ['cn', 'kp', 'sy', 'cu', 'ir'];
@@ -984,7 +544,7 @@ function fallbackVerdict(key, region) {
   const list = SUPPORT_LISTS[key];
   if (list) return list.indexOf(r) !== -1 ? 'ok' : 'no';
 
-  // 全球型流媒体（nf / dis / yt / pv / hbo / sp 等）按排除表
+  // 全球型流媒体（nf / dis / yt / pv / atv / sp 等）按排除表
   return GLOBAL_BLOCK.indexOf(r) === -1 ? 'ok' : 'no';
 }
 
@@ -997,38 +557,14 @@ const CHECKERS = {
   dis: checkDisney,
   yt: checkYouTube,
   pv: checkPrimeVideo,
-  hbo: checkHBOMax,
+  atv: checkAppleTV,
   sp: checkSpotify,
   gpt: checkChatGPT,
   gemini: checkGemini,
   claude: checkClaude,
   copilot: checkCopilot,
   grok: checkGrok,
-  pplx: checkPerplexity,
-  abema: checkAbema,
-  nico: checkNiconico,
-  tver: checkTVer,
-  unext: checkUNext,
-  fod: checkFOD,
-  dmm: checkDMM,
-  mytv: checkMyTvSuper,
-  viu: checkViu,
-  tvb: checkTVB,
-  nowe: checkNowE,
-  encore: checkEncoreTVB,
-  viutv: checkViuTV,
-  bilitw: checkBiliTW,
-  '4gtv': check4GTV,
-  linetv: checkLineTV,
-  myvideo: checkMyVideo,
-  kktv: checkKKTV,
-  hami: checkHamiVideo,
-  hulu: checkHulu,
-  peacock: checkPeacock,
-  fubo: checkFuboTV,
-  atv: checkAppleTV,
-  tubi: checkTubi,
-  starz: checkStarz
+  pplx: checkPerplexity
 };
 
 // ============================================================
@@ -1101,7 +637,7 @@ export default async function (ctx = {}) {
 
   // 统一应用出口地区兜底 + 超时推断
   function applyInference(r, k) {
-    // 解锁但自身不带地区（AI 组 / B站等）→ 用出口地区兜底，保证每行都显示地区
+    // 解锁但自身不带地区（AI 组等）→ 用出口地区兜底，保证每行都显示地区
     if (r.status === ST.OK && !r.region && exitRegion) {
       return result(ST.OK, exitRegion, r.info);
     }
