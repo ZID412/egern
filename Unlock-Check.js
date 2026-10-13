@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.5
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.6
 按分组检测当前出口 IP 对流媒体 / AI 服务的解锁情况。
 
 【环境变量配置说明】
@@ -27,11 +27,11 @@ CATEGORY 的填写顺序直接决定小 / 中 / 大尺寸的显示顺序
 值：glass（液态玻璃），不填默认黑色背景
 
 【状态含义】
-- 解锁：该服务在当前出口可用，右侧显示地区码
-- 未解锁：服务可达，但当前地区不支持
-- 受限：部分可用（Netflix 仅自制剧 / ChatGPT 限流）
-- 封锁：IP 被服务方拉黑（Netflix 403 / OpenAI VPN 拦截）
-- 未知：探测失败（超时、网络错误、接口变更）
+- 解锁（绿）：该服务在当前出口可用，右侧显示地区码
+- 未解锁（红）：服务可达，但当前地区不支持
+- 受限（黄）：部分可用（Netflix 仅自制剧 / ChatGPT 限流 / Abema 海外限定）
+- 封锁（红）：IP 被服务方拉黑（Netflix 403 / OpenAI VPN 拦截）
+- 未知（灰）：探测失败（超时、网络错误、接口变更）
 
 ----------------------------------------------------------
  */
@@ -263,6 +263,9 @@ function regionFromLocation(loc) {
 // 读不出才补一个试探页；404/403 才请求第二个片源页区分「仅自制剧 / IP 被封」。
 // 必须 redirect:'manual' —— 跟随重定向就拿不到 location 了。
 async function checkNetflix(ctx, policy, timeoutMs) {
+  // v1.1.6：timeoutMs 语义 = 本服务检测的预算，后续每段请求只用剩余时间
+  const deadline = Date.now() + timeoutMs;
+  const left = function () { return Math.max(deadline - Date.now(), 300); };
   const opt = { redirect: 'manual' };
 
   const r1 = await httpGet(ctx, 'https://www.netflix.com/title/81280792', policy, timeoutMs, opt);
@@ -272,7 +275,7 @@ async function checkNetflix(ctx, policy, timeoutMs) {
   let s2 = 0;
   let loc2 = '';
   if (!(s1 === 200 || s1 === 301)) {
-    const r2 = await httpGet(ctx, 'https://www.netflix.com/title/70143836', policy, timeoutMs, opt);
+    const r2 = await httpGet(ctx, 'https://www.netflix.com/title/70143836', policy, left(), opt);
     s2 = readStatus(r2);
     loc2 = readHeader(r2 && r2.headers, 'location');
 
@@ -284,7 +287,7 @@ async function checkNetflix(ctx, policy, timeoutMs) {
   const direct = regionFromLocation(s1 === 301 ? loc1 : (s2 === 301 ? loc2 : ''));
   if (direct) return result(ST.OK, direct, '');
 
-  const resp3 = await httpGet(ctx, 'https://www.netflix.com/title/80018499', policy, timeoutMs, opt);
+  const resp3 = await httpGet(ctx, 'https://www.netflix.com/title/80018499', policy, left(), opt);
   const loc = readHeader(resp3 && resp3.headers, 'location');
 
   if (!loc) return result(ST.OK, 'us', '');
@@ -553,6 +556,8 @@ function checkGrok(ctx, policy, timeoutMs) {
 // 请求 www.meta.ai/ajax —— 400/404 = 区域支持（可访问）；200 = 被地区页接管 → 未解锁；
 // 403 或其它状态码再看主页：GeoBlockedErrorRoot → 未解锁，Abra 主页标记 → 解锁（尝试从 code 取地区）。
 async function checkMetaAI(ctx, policy, timeoutMs) {
+  // v1.1.6：timeoutMs 语义 = 本服务检测的预算，第二段请求只用剩余时间
+  const deadline = Date.now() + timeoutMs;
   const headers = Object.assign({}, BROWSER_HEADERS, { 'accept-language': 'en-US,en;q=0.9' });
 
   const resp = await httpGet(ctx, 'https://www.meta.ai/ajax', policy, timeoutMs, { headers: headers });
@@ -561,7 +566,7 @@ async function checkMetaAI(ctx, policy, timeoutMs) {
   if (st === 400 || st === 404) return result(ST.OK, '', '');
   if (st === 200) return result(ST.NO, '', '');
 
-  const home = await httpGet(ctx, 'https://www.meta.ai/', policy, timeoutMs, { headers: headers });
+  const home = await httpGet(ctx, 'https://www.meta.ai/', policy, Math.max(deadline - Date.now(), 300), { headers: headers });
   const hs = readStatus(home);
   if (hs === 0) return result(ST.UNKNOWN, '', 'network');
 
@@ -666,11 +671,11 @@ function checkNhentai(ctx, policy, timeoutMs) {
 }
 
 // ============================================================
-// 超时兜底：按出口地区推断支持状态
+// 超时兜底：按出口地区推断支持状态（v1.1.6 起暂时停用：超时不再推断）
 // ============================================================
 
 // 地区型服务的支持地区白名单。地区分组已移除，此表暂不使用；
-// 检测超时/失败统一走下方 GLOBAL_BLOCK 全球型兜底。
+// v1.1.6 起超时不再推断，本段（含 GLOBAL_BLOCK / fallbackVerdict）暂时停用。
 const SUPPORT_LISTS = {};
 
 // 全球型流媒体的排除表：不在表内即视为支持
@@ -734,11 +739,9 @@ export default async function (ctx = {}) {
     return isFinite(n) && n > 0 ? n : 30;
   })();
 
-  // 默认 1800ms：两段串行（Netflix / Disney）也控制在 4 秒预算内
-  const timeoutMs = (function () {
-    const n = Number((ctx.env && ctx.env.TIMEOUT) || 1800);
-    return isFinite(n) && n > 0 ? n : 1800;
-  })();
+  // v1.1.6：检测请求不再设独立超时（统一用整体预算，见下方 BUDGET_MS）；
+  // 出口地区查询是整体流程的前置一小步，保留一个短超时，避免它拖住全部检测。
+  const EXIT_TIMEOUT_MS = 1800;
 
   const refreshAfter = new Date(Date.now() + refreshMinutes * 60000).toISOString();
 
@@ -780,87 +783,40 @@ export default async function (ctx = {}) {
 
   // ---- 出口地区先单独拿到 ----
   // 必须先于全部服务请求、独占代理跑完：否则代理被服务请求淹没时，
-  // cdn-cgi/trace 也抢不到连接、跟着超时，exitRegion 为空，下面「按地区推断」整段失效 → 大尺寸全灰。
-  // 这是 v1.0.8 大尺寸全部显示未知的根因。
+  // cdn-cgi/trace 也抢不到连接、跟着超时，exitRegion 为空，
+  // 所有「解锁但服务自身不带地区」的行都会没有地区可显示（v1.0.8 全灰事故的根因）。
   let exitRegion = '';
   try {
-    const loc = await safeCheck(function () { return getExitRegion(ctx, strategyGroup, timeoutMs); });
+    const loc = await safeCheck(function () { return getExitRegion(ctx, strategyGroup, EXIT_TIMEOUT_MS); });
     exitRegion = String((loc && loc.region) || '').toLowerCase();
   } catch (_) {}
 
-  // 统一应用出口地区兜底 + 超时推断
-  function applyInference(r, k) {
+  // 统一应用出口地区兜底（v1.1.6 起：超时/失败不再按地区推断解锁，未知保持未知）
+  function applyInference(r) {
     // 解锁但自身不带地区（AI 组等）→ 用出口地区兜底，保证每行都显示地区
     if (r.status === ST.OK && !r.region && exitRegion) {
       return result(ST.OK, exitRegion, r.info);
     }
-
-    // 检测失败/超时 → 按出口地区查支持名单推断。
-    // 只接受「推断为支持」；推断为不支持的一律保持未知 ——
-    // 「未解锁」只留给真正按出口 IP 检测出来的结果，不拿推断冒充实测。
-    if (r.status === ST.UNKNOWN && exitRegion) {
-      const verdict = fallbackVerdict(k, exitRegion);
-      if (verdict === 'ok') {
-        return result(ST.OK, exitRegion, '按地区推断');
-      }
-    }
-
     return r;
   }
 
   const isLarge = widgetFamily === 'systemLarge' || widgetFamily === 'systemExtraLarge';
   const results = {};
 
-  if (isLarge) {
-    // ---- 大尺寸：按组串行，组内并发 ----
-    // 每组单请求 5 秒，整体最长 20 秒。避免 36 个请求同时淹没代理，
-    // 也避免单组代理抖动把全部请求拖成未知。
-    const LARGE_TIMEOUT_MS = 5000;
-    const OVERALL_DEADLINE_MS = 20000;
-    const overallDeadline = Date.now() + OVERALL_DEADLINE_MS;
+  // ---- v1.1.6：所有检测请求全并发；单项不设独立超时，统一以整体预算为上限 ----
+  // 小/中尺寸预算 5 秒、大尺寸 10 秒：预算内返回的按真实结果，超预算未返回的按「未知」，
+  // 不再按出口地区推断解锁（推断已暂时停用）。
+  // 注：Netflix / MetaAI 是内部串联多段请求的服务，其后续请求只从剩余预算里扣时间。
+  const BUDGET_MS = isLarge ? 10000 : 5000;
+  const tasks = keys.map(function (key) {
+    const fn = CHECKERS[key];
+    return safeCheck(function () { return fn(ctx, strategyGroup, BUDGET_MS); });
+  });
 
-    for (const g of groups) {
-      const groupKeys = keys.filter(function (k) { return GROUPS[g].indexOf(k) !== -1; });
-      if (!groupKeys.length) continue;
-
-      if (Date.now() > overallDeadline) {
-        for (const k of groupKeys) {
-          if (!(k in results)) results[k] = applyInference(result(ST.UNKNOWN, '', 'budget'), k);
-        }
-        continue;
-      }
-
-      const groupTasks = groupKeys.map(function (key) {
-        const fn = CHECKERS[key];
-        return safeCheck(function () { return fn(ctx, strategyGroup, LARGE_TIMEOUT_MS); }).then(function (r) {
-          if (Date.now() > overallDeadline) return result(ST.UNKNOWN, '', 'budget');
-          return r;
-        });
-      });
-
-      const settled = await Promise.all(groupTasks);
-      groupKeys.forEach(function (k, idx) {
-        results[k] = applyInference(settled[idx], k);
-      });
-    }
-  } else {
-    // ---- 中小尺寸：全部并发，整体预算 4 秒 ----
-    const TOTAL_BUDGET_MS = 4000;
-    const deadline = Date.now() + TOTAL_BUDGET_MS;
-
-    const tasks = keys.map(function (key) {
-      const fn = CHECKERS[key];
-      return safeCheck(function () { return fn(ctx, strategyGroup, timeoutMs); }).then(function (r) {
-        if (Date.now() > deadline) return result(ST.UNKNOWN, '', 'budget');
-        return r;
-      });
-    });
-
-    const settled = await Promise.all(tasks);
-    keys.forEach(function (k, idx) {
-      results[k] = applyInference(settled[idx], k);
-    });
-  }
+  const settled = await Promise.all(tasks);
+  keys.forEach(function (k, idx) {
+    results[k] = applyInference(settled[idx]);
+  });
 
   // ---- 渲染 ----
   return render({
@@ -926,6 +882,33 @@ function limitForFamily(family) {
   return 6;
 }
 
+// ---- 地区码 → 完整地区名（v1.1.6）----
+// 仅影响展示（解锁行右侧文案），不参与判定；未收录的码原样显示。
+const REGION_NAMES = {
+  CN: '中国大陆', HK: '中国香港', TW: '中国台湾', MO: '中国澳门',
+  JP: '日本', KR: '韩国', SG: '新加坡', MY: '马来西亚', TH: '泰国',
+  VN: '越南', PH: '菲律宾', ID: '印度尼西亚', IN: '印度', PK: '巴基斯坦',
+  BD: '孟加拉国', LK: '斯里兰卡', NP: '尼泊尔', KH: '柬埔寨', MM: '缅甸',
+  LA: '老挝', MN: '蒙古', KZ: '哈萨克斯坦', UZ: '乌兹别克斯坦',
+  US: '美国', CA: '加拿大', MX: '墨西哥', BR: '巴西', AR: '阿根廷',
+  CL: '智利', CO: '哥伦比亚', PE: '秘鲁', VE: '委内瑞拉', EC: '厄瓜多尔',
+  GB: '英国', UK: '英国', DE: '德国', FR: '法国', IT: '意大利', ES: '西班牙',
+  PT: '葡萄牙', NL: '荷兰', BE: '比利时', CH: '瑞士', AT: '奥地利',
+  SE: '瑞典', NO: '挪威', DK: '丹麦', FI: '芬兰', IE: '爱尔兰',
+  PL: '波兰', CZ: '捷克', HU: '匈牙利', RO: '罗马尼亚', GR: '希腊',
+  RU: '俄罗斯', UA: '乌克兰', TR: '土耳其', BG: '保加利亚', HR: '克罗地亚',
+  SK: '斯洛伐克', SI: '斯洛文尼亚', RS: '塞尔维亚', LT: '立陶宛',
+  LV: '拉脱维亚', EE: '爱沙尼亚', IS: '冰岛', LU: '卢森堡',
+  IL: '以色列', SA: '沙特阿拉伯', AE: '阿联酋', QA: '卡塔尔', KW: '科威特',
+  EG: '埃及', ZA: '南非', NG: '尼日利亚', KE: '肯尼亚', MA: '摩洛哥',
+  AU: '澳大利亚', NZ: '新西兰'
+};
+
+function regionLabel(code) {
+  const c = String(code || '').toUpperCase();
+  return REGION_NAMES[c] || c;
+}
+
 function render(opts) {
   const family = opts.family;
   const style = opts.style;
@@ -985,13 +968,13 @@ function render(opts) {
     if (x.r.status === ST.OK) {
       // 解锁但没拿到地区 → 用出口地区兜底，避免显示 --
       const region = x.r.region || exitRegion;
-      return region ? String(region).toUpperCase() : '--';
+      return region ? regionLabel(region) : '--';
     }
     if (x.r.status === ST.RESTRICTED || x.r.status === ST.BANNED) {
       return x.r.info || x.m.label;
     }
     if (x.r.status === ST.NO) {
-      return x.r.region ? String(x.r.region).toUpperCase() : x.m.label;
+      return x.r.region ? regionLabel(x.r.region) : x.m.label;
     }
     return x.m.label;
   }
