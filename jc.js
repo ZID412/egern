@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.7
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.8
 按分组检测当前出口 IP 对流媒体 / AI 服务 / 各地区平台的解锁情况。
 
 【环境变量配置说明】
@@ -10,7 +10,6 @@ ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.7
 【选填项】
 名称：CATEGORY
 值：分组名，用 | 分隔，可多选。不填默认 streaming
-    示例：jp   或   hk|tw   或   streaming|ai|jp|us
 
 streaming：Netflix / Disney+ / YouTube /  Prime Video / HBO Max / Spotify
 ai：ChatGPT / Gemini / Claude / Copilot / Grok / Perplexity
@@ -1374,6 +1373,9 @@ function render(opts) {
   }
 
   // ---- systemMedium（12 行）----
+  // 布局：标题 / 列表 / 弹性空隙 / 横条贴底。标题后不放弹性 spacer ——
+  // 两个弹性 spacer 会把空隙均分到上下，内容一多行与行就重叠（v1.0.7 实机问题）。
+  // 行距与字号按 12 项两列各 6 行压缩，确保总高不超组件。
   if (family === 'systemMedium') {
     return {
       type: 'widget',
@@ -1386,20 +1388,20 @@ function render(opts) {
           type: 'stack',
           direction: 'row',
           gap: 6,
+          alignItems: 'center',
           children: [
-            { type: 'image', src: 'sf-symbol:play.tv.fill', width: 17, height: 17, color: C.ok },
-            { type: 'text', text: titleText, font: { size: 17, weight: 'bold' }, textColor: C.text },
+            { type: 'image', src: 'sf-symbol:play.tv.fill', width: 15, height: 15, color: C.ok },
+            { type: 'text', text: titleText, font: { size: 15, weight: 'bold' }, textColor: C.text },
             { type: 'spacer' },
-            { type: 'text', text: timeText(), font: { size: 12, weight: 'medium' }, textColor: C.muted, maxLine: 1 }
+            { type: 'text', text: timeText(), font: { size: 11, weight: 'medium' }, textColor: C.muted, maxLine: 1 }
           ]
         },
-        { type: 'spacer' },
         {
           type: 'stack',
           direction: 'row',
-          gap: 16,
+          gap: 14,
           children: columns.map(function (col) {
-            return { ...columnNode(col, 13, 12, 14, 6), flex: 1 };
+            return { ...columnNode(col, 12, 11, 12, 4), flex: 1 };
           })
         },
         { type: 'spacer' },
@@ -1410,16 +1412,15 @@ function render(opts) {
           gap: 8,
           children: [
             unlockBar(okCount, total, C.ok, C.no, 5),
-            { type: 'text', text: okCount + '/' + total, font: { size: 12, weight: 'bold' }, textColor: C.text, maxLine: 1 }
+            { type: 'text', text: okCount + '/' + total, font: { size: 11, weight: 'bold' }, textColor: C.text, maxLine: 1 }
           ]
         }
       ]
     };
   }
 
-  // ---- systemLarge / systemExtraLarge（上限 24 行，两列）----
-  // half / leftRows / rightRows / columnNode 已在上方通用区定义
-
+  // ---- systemLarge / systemExtraLarge（上限 36 项，两列）----
+  // 与 medium 同构：标题 / 列表 / 弹性空隙 / 横条贴底。行距按最多 16 行/列压缩。
   return {
     type: 'widget',
     ...rootBackground(style, gradient),
@@ -1431,20 +1432,20 @@ function render(opts) {
         type: 'stack',
         direction: 'row',
         gap: 6,
+        alignItems: 'center',
         children: [
-          { type: 'image', src: 'sf-symbol:play.tv.fill', width: 19, height: 19, color: C.ok },
-          { type: 'text', text: titleText, font: { size: 19, weight: 'bold' }, textColor: C.text },
+          { type: 'image', src: 'sf-symbol:play.tv.fill', width: 16, height: 16, color: C.ok },
+          { type: 'text', text: titleText, font: { size: 16, weight: 'bold' }, textColor: C.text },
           { type: 'spacer' },
-          { type: 'text', text: timeText(), font: { size: 12, weight: 'medium' }, textColor: C.muted, maxLine: 1 }
+          { type: 'text', text: timeText(), font: { size: 11, weight: 'medium' }, textColor: C.muted, maxLine: 1 }
         ]
       },
-      { type: 'spacer' },
       {
         type: 'stack',
         direction: 'row',
-        gap: 18,
+        gap: 16,
         children: columns.map(function (col) {
-          return { ...columnNode(col, 12, 11, 13, 7), flex: 1 };
+          return { ...columnNode(col, 11, 10, 11, 4), flex: 1 };
         })
       },
       { type: 'spacer' },
@@ -1455,7 +1456,7 @@ function render(opts) {
         gap: 8,
         children: [
           unlockBar(okCount, total, C.ok, C.no, 6),
-          { type: 'text', text: okCount + '/' + total, font: { size: 13, weight: 'bold' }, textColor: C.text, maxLine: 1 }
+          { type: 'text', text: okCount + '/' + total, font: { size: 12, weight: 'bold' }, textColor: C.text, maxLine: 1 }
         ]
       }
     ]
