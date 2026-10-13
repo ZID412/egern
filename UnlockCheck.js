@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.13
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.1.0
 按分组检测当前出口 IP 对流媒体 / AI 服务的解锁情况。
 
 【环境变量配置说明】
@@ -11,8 +11,8 @@ ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.13
 名称：CATEGORY
 值：分组名（全大写），用 | 分隔，可多选。不填默认 OTT
 
-OTT：Netflix / Disney+ / YouTube / Prime Video / AppleTV / Spotify
-AI：ChatGPT / Gemini / Claude / Copilot / Grok / Perplexity
+OTT：AppleTV、Disney+、Netflix、Spotify、TikTok、YouTube
+AI：ChatGPT、Claude、Copilot、Gemini、Grok、Pplx
 
 名称：REFRESH_MINUTES
 值：小组件刷新间隔（单位：分钟，默认 30）
@@ -97,26 +97,26 @@ const ST = {
 // ============================================================
 
 const SERVICES = [
-  // ---- streaming ----
-  { key: 'nf',     label: 'Netflix',      symbol: 'sf-symbol:tv.fill' },
-  { key: 'dis',    label: 'Disney+',      symbol: 'sf-symbol:sparkles' },
-  { key: 'yt',     label: 'YouTube',      symbol: 'sf-symbol:play.rectangle.fill' },
-  { key: 'pv',     label: 'Prime',        symbol: 'sf-symbol:play.circle.fill' },
+  // ---- streaming（按服务名首字母排序）----
   { key: 'atv',    label: 'AppleTV',      symbol: 'sf-symbol:appletv.fill' },
+  { key: 'dis',    label: 'Disney+',      symbol: 'sf-symbol:sparkles' },
+  { key: 'nf',     label: 'Netflix',      symbol: 'sf-symbol:tv.fill' },
   { key: 'sp',     label: 'Spotify',      symbol: 'sf-symbol:music.note' },
-  // ---- ai ----
+  { key: 'tt',     label: 'TikTok',       symbol: 'sf-symbol:video.fill' },
+  { key: 'yt',     label: 'YouTube',      symbol: 'sf-symbol:play.rectangle.fill' },
+  // ---- ai（按服务名首字母排序）----
   { key: 'gpt',    label: 'ChatGPT',      symbol: 'sf-symbol:bubble.left.fill' },
-  { key: 'gemini', label: 'Gemini',       symbol: 'sf-symbol:sparkle' },
   { key: 'claude', label: 'Claude',       symbol: 'sf-symbol:bubble.left.and.bubble.right.fill' },
   { key: 'copilot',label: 'Copilot',      symbol: 'sf-symbol:laptopcomputer' },
+  { key: 'gemini', label: 'Gemini',       symbol: 'sf-symbol:sparkle' },
   { key: 'grok',   label: 'Grok',         symbol: 'sf-symbol:bolt.fill' },
   { key: 'pplx',   label: 'Pplx',         symbol: 'sf-symbol:magnifyingglass' }
 ];
 
 // 分组 → 服务 key 列表（每项恰好 6 个）
 const GROUPS = {
-  OTT: ['nf', 'dis', 'yt', 'pv', 'atv', 'sp'],
-  AI: ['gpt', 'gemini', 'claude', 'copilot', 'grok', 'pplx']
+  OTT: ['atv', 'dis', 'nf', 'sp', 'tt', 'yt'],
+  AI: ['gpt', 'claude', 'copilot', 'gemini', 'grok', 'pplx']
 };
 
 const GROUP_LABELS = {
@@ -238,37 +238,48 @@ async function safeCheck(fn) {
 // streaming 组
 // ============================================================
 
+// 从 Netflix 跳转地址抽地区码：https://www.netflix.com/hk-en/title/… → 第 4 段截掉 -xx 后缀
+function regionFromLocation(loc) {
+  const parts = String(loc || '').split('/');
+  if (parts.length < 5) return '';
+  const seg = String(parts[3] || '').split('-')[0].toLowerCase();
+  return /^[a-z]{2}$/.test(seg) ? seg : '';
+}
+
 // ---- Netflix ----
-// 判定链：片源页 200/301 → 试探页读 location 地区（常见解锁路径只要 2 个请求）；
-// 只有第一个片源页 404/403 时才去请求第二个，用来区分「仅自制剧 / IP 被封」。
+// 判定链：片源页 301 的跳转地址里就带地区段，直接读出即完成（v1.1.0 提速：常见非美区 3 请求 → 1 请求）；
+// 读不出才补一个试探页；404/403 才请求第二个片源页区分「仅自制剧 / IP 被封」。
 // 必须 redirect:'manual' —— 跟随重定向就拿不到 location 了。
 async function checkNetflix(ctx, policy, timeoutMs) {
   const opt = { redirect: 'manual' };
 
   const r1 = await httpGet(ctx, 'https://www.netflix.com/title/81280792', policy, timeoutMs, opt);
   const s1 = readStatus(r1);
+  const loc1 = readHeader(r1 && r1.headers, 'location');
 
   let s2 = 0;
+  let loc2 = '';
   if (!(s1 === 200 || s1 === 301)) {
     const r2 = await httpGet(ctx, 'https://www.netflix.com/title/70143836', policy, timeoutMs, opt);
     s2 = readStatus(r2);
+    loc2 = readHeader(r2 && r2.headers, 'location');
 
     if (s1 === 404 && s2 === 404) return result(ST.RESTRICTED, '', '仅自制剧');
     if (s1 === 403 && s2 === 403) return result(ST.BANNED, '', 'IP 被封');
     if (!(s2 === 200 || s2 === 301)) return result(ST.UNKNOWN, '', 'unexpected ' + s1 + '/' + s2);
   }
 
+  const direct = regionFromLocation(s1 === 301 ? loc1 : (s2 === 301 ? loc2 : ''));
+  if (direct) return result(ST.OK, direct, '');
+
   const resp3 = await httpGet(ctx, 'https://www.netflix.com/title/80018499', policy, timeoutMs, opt);
   const loc = readHeader(resp3 && resp3.headers, 'location');
 
   if (!loc) return result(ST.OK, 'us', '');
 
-  // location 形如 https://www.netflix.com/hk-en/title/... → 取第 4 段再截掉 -xx 后缀
-  const parts = String(loc).split('/');
-  if (parts.length < 5) return result(ST.UNKNOWN, '', 'bad location');
-  const seg = String(parts[3] || '').split('-')[0];
+  const seg = regionFromLocation(loc);
   if (!seg) return result(ST.UNKNOWN, '', 'bad region');
-  return result(ST.OK, seg.toLowerCase(), '');
+  return result(ST.OK, seg, '');
 }
 
 // ---- Disney+ ----
@@ -286,7 +297,13 @@ async function checkDisney(ctx, policy, timeoutMs) {
     'content-type': 'application/x-www-form-urlencoded'
   };
 
-  const q = await httpPost(ctx, 'https://www.disneyplus.com', policy, timeoutMs, body, headers, 'manual');
+  // 官网查询与令牌验证互不依赖，并行发（v1.1.0 提速：串行两跳 → 并排一跳）
+  const pair = await Promise.all([
+    httpPost(ctx, 'https://www.disneyplus.com', policy, timeoutMs, body, headers, 'manual'),
+    httpPost(ctx, 'https://disney.api.edge.bamgrid.com/token', policy, timeoutMs, body, headers, 'manual')
+  ]);
+
+  const q = pair[0];
   const location = readHeader(q && q.headers, 'location');
 
   let queryRegion = '';
@@ -294,16 +311,11 @@ async function checkDisney(ctx, policy, timeoutMs) {
     queryRegion = readCookie(q && q.headers, 'x-dss-country').toLowerCase();
   } else if (location === 'https://disneyplus.disney.co.jp/') {
     queryRegion = 'jp';
-  } else if (location === 'https://preview.disneyplus.com/unavailable/') {
-    return result(ST.NO, '', '地区不支持');
   } else {
     return result(ST.NO, '', '地区不支持');
   }
 
-  const v = await httpPost(
-    ctx, 'https://disney.api.edge.bamgrid.com/token', policy, timeoutMs, body, headers, 'manual'
-  );
-
+  const v = pair[1];
   const vb = await readText(v);
   if (!vb) return result(ST.UNKNOWN, queryRegion, 'empty body');
   if (vb.indexOf('unauthorized') !== -1) return result(ST.UNKNOWN, queryRegion, '令牌失效');
@@ -349,20 +361,6 @@ async function checkYouTube(ctx, policy, timeoutMs) {
   return result(ST.NO, '', '');
 }
 
-// ---- Prime Video ----
-async function checkPrimeVideo(ctx, policy, timeoutMs) {
-  const resp = await httpGet(ctx, 'https://www.primevideo.com', policy, timeoutMs);
-  const s = await readText(resp);
-  if (!s) return result(ST.UNKNOWN, '', 'empty body');
-
-  const i = s.indexOf('"currentTerritory":');
-  if (i === -1) return result(ST.NO, '', '');
-
-  const code = s.slice(i + 20, i + 22).replace(/[^A-Za-z]/g, '').toLowerCase();
-  if (!code) return result(ST.UNKNOWN, '', 'bad region');
-  return result(ST.OK, code, '');
-}
-
 // ---- Spotify ----
 // 访问 spotify.com 主页，通过地区跳转 / 页面文案判断可用性。
 // 旧注册接口（spclient.wg.spotify.com）写死了固定 token，已被风控/失效，所有节点都被误判为未解锁。
@@ -400,6 +398,30 @@ async function checkSpotify(ctx, policy, timeoutMs) {
   return result(ST.OK, '', '');
 }
 
+// ---- TikTok ----
+// 解析 www.tiktok.com 主页 HTML 内嵌的 region 字段（社区脚本同款方法，单请求）。
+// 受限地区该字段位置会变成 #TikTokTraditions / This LIVE 文案 → 未解锁；解析不到 → 未知。
+async function checkTikTok(ctx, policy, timeoutMs) {
+  const resp = await httpGet(ctx, 'https://www.tiktok.com/', policy, timeoutMs);
+  const body = await readText(resp);
+
+  const i = body.indexOf('region":"');
+  if (i === -1) return result(ST.UNKNOWN, '', 'no region');
+
+  const rest = body.slice(i + 9);
+  const q = rest.indexOf('"');
+  const val = (q === -1 ? rest : rest.slice(0, q)).trim();
+  if (!val) return result(ST.UNKNOWN, '', 'empty region');
+
+  if (val.indexOf('The #TikTokTraditions') === 0 || val.indexOf("This LIVE isn't available") === 0) {
+    return result(ST.NO, '', '');
+  }
+
+  const m = val.match(/^([A-Za-z]{2})$/);
+  if (!m) return result(ST.UNKNOWN, '', 'bad region');
+  return result(ST.OK, m[1].toLowerCase(), '');
+}
+
 // ============================================================
 // ai 组
 // ============================================================
@@ -422,9 +444,15 @@ async function getExitRegion(ctx, policy, timeoutMs) {
 }
 
 // ---- ChatGPT（可靠性高）----
-// 先读 cdn-cgi/trace 的 loc 拿到出口地区，再查 OpenAI 官方支持国家列表
+// 先读 cdn-cgi/trace 的 loc 拿到出口地区，再查 OpenAI 官方支持国家列表；
+// trace 与主页并行发（v1.1.0 提速：串行两跳 → 并排一跳）
 async function checkChatGPT(ctx, policy, timeoutMs) {
-  const trace = await httpGet(ctx, 'https://chat.openai.com/cdn-cgi/trace', policy, timeoutMs);
+  const pair = await Promise.all([
+    httpGet(ctx, 'https://chat.openai.com/cdn-cgi/trace', policy, timeoutMs),
+    httpGet(ctx, 'https://chat.openai.com', policy, timeoutMs)
+  ]);
+  const trace = pair[0];
+  const home = pair[1];
 
   const ts = await readText(trace);
   const i = ts.indexOf('loc=');
@@ -435,7 +463,6 @@ async function checkChatGPT(ctx, policy, timeoutMs) {
   const loc = (nl === -1 ? rest : rest.slice(0, nl)).trim().toUpperCase();
   if (!loc) return result(ST.UNKNOWN, '', 'empty loc');
 
-  const home = await httpGet(ctx, 'https://chat.openai.com', policy, timeoutMs);
   const body = await readText(home);
 
   if (body && body.indexOf('VPN') !== -1) return result(ST.BANNED, loc, 'VPN 拦截');
@@ -554,7 +581,7 @@ function fallbackVerdict(key, region) {
   const list = SUPPORT_LISTS[key];
   if (list) return list.indexOf(r) !== -1 ? 'ok' : 'no';
 
-  // 全球型流媒体（nf / dis / yt / pv / atv / sp 等）按排除表
+  // 全球型流媒体（nf / dis / yt / tt / atv / sp 等）按排除表
   return GLOBAL_BLOCK.indexOf(r) === -1 ? 'ok' : 'no';
 }
 
@@ -566,7 +593,7 @@ const CHECKERS = {
   nf: checkNetflix,
   dis: checkDisney,
   yt: checkYouTube,
-  pv: checkPrimeVideo,
+  tt: checkTikTok,
   atv: checkAppleTV,
   sp: checkSpotify,
   gpt: checkChatGPT,
@@ -599,9 +626,9 @@ export default async function (ctx = {}) {
 
   const refreshAfter = new Date(Date.now() + refreshMinutes * 60000).toISOString();
 
-  // ---- 解析 CATEGORY：分组名可多选，按书写顺序去重 ----
-  // 分组名全大写：OTT / AI / JP / HK / TW / US，用 | 分隔可多选。
-  // 仅识别新分组名，旧写法（单字母 s/a/j/h/t/u、全拼 streaming/ai/jp/hk/tw/us）一律无效。
+  // ---- 解析 CATEGORY：分组名可多选 ----
+  // 只有 OTT / AI 两个分组（全大写），用 | 分隔可多选。
+  // 展示固定 OTT 在前、AI 在后（v1.1.0），组内按服务名首字母排序；旧写法一律无效。
   const tokens = String((ctx.env && ctx.env.CATEGORY) || '')
     .split('|')
     .map(function (s) { return s.trim(); })
@@ -611,11 +638,11 @@ export default async function (ctx = {}) {
   let keys = [];
 
   if (tokens.length) {
-    for (const t of tokens) {
-      if (!GROUPS[t]) continue;
-      if (groups.indexOf(t) === -1) groups.push(t);
-      for (const k of GROUPS[t]) {
-        // 跨分组重复的服务只保留一次，位置以首次出现为准
+    // 按 GROUPS 的固定顺序（OTT → AI）收集，不随书写顺序变化
+    for (const name of Object.keys(GROUPS)) {
+      if (tokens.indexOf(name) === -1) continue;
+      groups.push(name);
+      for (const k of GROUPS[name]) {
         if (keys.indexOf(k) === -1) keys.push(k);
       }
     }
@@ -626,8 +653,8 @@ export default async function (ctx = {}) {
     keys = GROUPS[DEFAULT_GROUP].slice();
   }
 
-  // 只检测当前尺寸能显示的项（小 6 / 中 12 / 大 24）。
-  // v1.0.3 是全量检测再按尺寸截断显示，小尺寸也得跟着发 24 个服务的请求。
+  // 只检测当前尺寸能显示的项（小 6 / 中 12 / 大 36）。
+  // v1.0.3 是全量检测再按尺寸截断显示，小尺寸也得跟着发全部服务的请求。
   const displayLimit = limitForFamily(widgetFamily);
   if (keys.length > displayLimit) keys = keys.slice(0, displayLimit);
 
@@ -636,7 +663,7 @@ export default async function (ctx = {}) {
   }).filter(Boolean);
 
   // ---- 出口地区先单独拿到 ----
-  // 必须先于 36 个服务请求、独占代理跑完：否则代理被服务请求淹没时，
+  // 必须先于全部服务请求、独占代理跑完：否则代理被服务请求淹没时，
   // cdn-cgi/trace 也抢不到连接、跟着超时，exitRegion 为空，下面「按地区推断」整段失效 → 大尺寸全灰。
   // 这是 v1.0.8 大尺寸全部显示未知的根因。
   let exitRegion = '';
@@ -667,6 +694,7 @@ export default async function (ctx = {}) {
 
   const isLarge = widgetFamily === 'systemLarge' || widgetFamily === 'systemExtraLarge';
   const results = {};
+  const timings = {};
 
   if (isLarge) {
     // ---- 大尺寸：按组串行，组内并发 ----
@@ -689,15 +717,18 @@ export default async function (ctx = {}) {
 
       const groupTasks = groupKeys.map(function (key) {
         const fn = CHECKERS[key];
+        const t0 = Date.now();
         return safeCheck(function () { return fn(ctx, strategyGroup, LARGE_TIMEOUT_MS); }).then(function (r) {
-          if (Date.now() > overallDeadline) return result(ST.UNKNOWN, '', 'budget');
-          return r;
+          const ms = Date.now() - t0;
+          if (Date.now() > overallDeadline) return { r: result(ST.UNKNOWN, '', 'budget'), ms: ms };
+          return { r: r, ms: ms };
         });
       });
 
       const settled = await Promise.all(groupTasks);
       groupKeys.forEach(function (k, idx) {
-        results[k] = applyInference(settled[idx], k);
+        results[k] = applyInference(settled[idx].r, k);
+        timings[k] = settled[idx].ms;
       });
     }
   } else {
@@ -707,15 +738,18 @@ export default async function (ctx = {}) {
 
     const tasks = keys.map(function (key) {
       const fn = CHECKERS[key];
+      const t0 = Date.now();
       return safeCheck(function () { return fn(ctx, strategyGroup, timeoutMs); }).then(function (r) {
-        if (Date.now() > deadline) return result(ST.UNKNOWN, '', 'budget');
-        return r;
+        const ms = Date.now() - t0;
+        if (Date.now() > deadline) return { r: result(ST.UNKNOWN, '', 'budget'), ms: ms };
+        return { r: r, ms: ms };
       });
     });
 
     const settled = await Promise.all(tasks);
     keys.forEach(function (k, idx) {
-      results[k] = applyInference(settled[idx], k);
+      results[k] = applyInference(settled[idx].r, k);
+      timings[k] = settled[idx].ms;
     });
   }
 
@@ -726,6 +760,7 @@ export default async function (ctx = {}) {
     refreshAfter: refreshAfter,
     list: list,
     results: results,
+    timings: timings,
     group: strategyGroup,
     categories: groups,
     exitRegion: exitRegion
@@ -789,6 +824,7 @@ function render(opts) {
   const results = opts.results;
   const group = opts.group;
   const exitRegion = opts.exitRegion || '';
+  const timings = opts.timings || {};
 
   const list = opts.list.slice(0, limitForFamily(family));
   const big = family === 'systemLarge' || family === 'systemExtraLarge';
@@ -825,7 +861,7 @@ function render(opts) {
 
   const rows = list.map(function (s) {
     const r = results[s.key] || result(ST.UNKNOWN, '', '');
-    return { service: s, r: r, m: meta(r) };
+    return { service: s, r: r, m: meta(r), ms: timings[s.key] };
   });
 
   const total = opts.list.length;
@@ -853,22 +889,23 @@ function render(opts) {
     return x.m.label;
   }
 
-  // 大尺寸两列：三列会把标签挤到换行截断（v1.0.5 实机问题），恒用两列
+  // medium 两列：三列会把标签挤到换行截断（v1.0.5 实机问题），恒用两列
   const perColumn = Math.ceil(rows.length / 2);
   const columns = [rows.slice(0, perColumn), rows.slice(perColumn)];
 
-  // 两列布局通用构建（medium / large 共用）；底部区域已整体移除
-  function columnNode(list, labelSize, tailSize, iconSize, gap) {
+  // 列布局通用构建（medium 两列 / large 单列共用）
+  function columnNode(list, labelSize, tailSize, iconSize, gap, msSize) {
     return {
       type: 'stack',
       direction: 'column',
       gap: gap,
-      children: list.map(function (x) { return rowNode(x, labelSize, tailSize, iconSize, true); })
+      children: list.map(function (x) { return rowNode(x, labelSize, tailSize, iconSize, true, msSize); })
     };
   }
 
-  // 单行：图标 + 名称 + 状态。wide 控制是否显示服务自身图标
-  function rowNode(x, labelSize, tailSize, iconSize, showServiceIcon) {
+  // 单行：图标 + 名称 + [耗时ms] + 状态图标 + 地区/状态文案。
+  // msSize 仅大尺寸传入（v1.1.0）：耗时显示在状态图标前，≤100ms 绿色、>100ms 黄色。
+  function rowNode(x, labelSize, tailSize, iconSize, showServiceIcon, msSize) {
     const children = [];
 
     if (showServiceIcon) {
@@ -891,36 +928,41 @@ function render(opts) {
 
     children.push({ type: 'spacer' });
 
-    // 状态图标 + 地区/状态文案：整块包进定宽 stack。
-    // 宽度不随文案变化 → 图标位置固定不漂移，地区从同一起点跟在图标后面写（v1.0.13）。
+    if (msSize) {
+      children.push({
+        type: 'text',
+        text: msLabel(x),
+        font: { size: msSize, weight: 'medium' },
+        textColor: msColor(x),
+        maxLines: 1
+      });
+    }
+
     children.push({
-      type: 'stack',
-      direction: 'row',
-      gap: 6,
-      alignItems: 'center',
-      width: iconSize - 2 + 6 + Math.round(tailSize * 3),
-      children: [
-        {
-          type: 'image',
-          src: x.m.symbol,
-          width: iconSize - 2,
-          height: iconSize - 2,
-          color: x.m.color
-        },
-        {
-          type: 'text',
-          text: tail(x),
-          font: { size: tailSize, weight: 'bold' },
-          textColor: x.m.color,
-          textAlign: 'left',
-          maxLines: 1,
-          minScale: 0.65,
-          flex: 1
-        }
-      ]
+      type: 'image',
+      src: x.m.symbol,
+      width: iconSize - 2,
+      height: iconSize - 2,
+      color: x.m.color
+    });
+    children.push({
+      type: 'text',
+      text: tail(x),
+      font: { size: tailSize, weight: 'bold' },
+      textColor: x.m.color,
+      maxLines: 1
     });
 
     return { type: 'stack', direction: 'row', gap: 6, children: children };
+  }
+
+  // 耗时文案与颜色（未测量 → -- 灰色）
+  function msLabel(x) {
+    return typeof x.ms === 'number' ? Math.round(x.ms) + 'ms' : '--';
+  }
+  function msColor(x) {
+    if (typeof x.ms !== 'number') return C.muted;
+    return x.ms <= 100 ? C.ok : C.warn;
   }
 
   // ---- accessoryInline ----
@@ -1095,15 +1137,15 @@ function render(opts) {
     };
   }
 
-  // ---- systemLarge / systemExtraLarge（上限 36 项，两列各 18 行）----
-  // 与 medium 同构：标题 / 列表(flex:1 占满中间) / 横条贴底。
-  // 行距与字号按两列各 18 行压缩，确保总高不超组件（large 实测曾因 18 行超高而重叠）。
+  // ---- systemLarge / systemExtraLarge（单列放大版，v1.1.0）----
+  // 全部 12 项只占一列，不需要再为「两列各 18 行」压缩字号：
+  // 字号整体放大到高于 medium，每行显示该服务的检测耗时（ms）。
   return {
     type: 'widget',
     ...rootBackground(style, gradient),
     border: { width: 1, color: C.borderColor },
-    padding: 15,
-    gap: 2,
+    padding: 16,
+    gap: 3,
     children: [
       {
         type: 'stack',
@@ -1111,29 +1153,21 @@ function render(opts) {
         gap: 6,
         alignItems: 'center',
         children: [
-          { type: 'image', src: 'sf-symbol:play.tv.fill', width: 15, height: 15, color: C.ok },
-          { type: 'text', text: titleText, font: { size: 15, weight: 'bold' }, textColor: C.text },
+          { type: 'image', src: 'sf-symbol:play.tv.fill', width: 18, height: 18, color: C.ok },
+          { type: 'text', text: titleText, font: { size: 18, weight: 'bold' }, textColor: C.text },
           { type: 'spacer' },
-          { type: 'text', text: timeText(), font: { size: 11, weight: 'medium' }, textColor: C.muted, maxLines: 1 }
+          { type: 'text', text: timeText(), font: { size: 12, weight: 'medium' }, textColor: C.muted, maxLines: 1 }
         ]
       },
-      {
-        type: 'stack',
-        direction: 'row',
-        gap: 16,
-        flex: 1,
-          children: columns.map(function (col) {
-            return { ...columnNode(col, 10, 9, 10, 3), flex: 1 };
-          })
-        },
+      { ...columnNode(rows, 16, 15, 16, 4, 13), flex: 1 },
       {
         type: 'stack',
         direction: 'row',
         alignItems: 'center',
         gap: 8,
         children: [
-          unlockBar(okCount, total, C.ok, C.no, 6),
-          { type: 'text', text: okCount + '/' + total, font: { size: 11, weight: 'bold' }, textColor: C.text, maxLines: 1 }
+          unlockBar(okCount, total, C.ok, C.no, 7),
+          { type: 'text', text: okCount + '/' + total, font: { size: 13, weight: 'bold' }, textColor: C.text, maxLines: 1 }
         ]
       }
     ]
