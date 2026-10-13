@@ -1,5 +1,5 @@
 /*
-ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.3
+ZID412 - Egern通用脚本小组件 - 解锁检测 v1.0.4
 按分组检测当前出口 IP 对流媒体 / AI 服务 / 各地区平台的解锁情况。
 
 【环境变量配置说明】
@@ -21,9 +21,6 @@ us：Netflix / Disney+ / HBO Max /  Hulu / Peacock / Prime Video
 
 名称：REFRESH_MINUTES
 值：小组件刷新间隔（单位：分钟，默认 30）
-
-名称：CACHE_MINUTES
-值：检测结果缓存时长（单位：分钟，默认 10，填 0 关闭缓存）
 
 名称：TIMEOUT
 值：单个请求超时（单位：毫秒，默认 2500）
@@ -949,13 +946,6 @@ export default async function (ctx = {}) {
     return isFinite(n) && n > 0 ? n : 30;
   })();
 
-  const cacheMinutes = (function () {
-    const raw = ctx.env && ctx.env.CACHE_MINUTES;
-    if (raw === undefined || raw === null || String(raw).trim() === '') return 10;
-    const n = Number(raw);
-    return isFinite(n) && n >= 0 ? n : 10;
-  })();
-
   const timeoutMs = (function () {
     const n = Number((ctx.env && ctx.env.TIMEOUT) || 2500);
     return isFinite(n) && n > 0 ? n : 2500;
@@ -988,63 +978,35 @@ export default async function (ctx = {}) {
     keys = GROUPS[DEFAULT_GROUP].slice();
   }
 
+  // 只检测当前尺寸能显示的项（小 6 / 中 12 / 大 24）。
+  // v1.0.3 是全量检测再按尺寸截断显示，小尺寸也得跟着发 24 个服务的请求。
+  const displayLimit = limitForFamily(widgetFamily);
+  if (keys.length > displayLimit) keys = keys.slice(0, displayLimit);
+
   const list = keys.map(function (k) {
     return SERVICES.find(function (s) { return s.key === k; });
   }).filter(Boolean);
 
-  // ---- 缓存读取 ----
-  // 缓存 key 带上分组（排序后拼接，保证 jp|tw 与 tw|jp 命中同一份）。
-  // 不分组的话，切换 CATEGORY 时新分组会覆盖旧分组的缓存，来回切就永远命中不上。
-  const cacheKey = 'unlock_' + strategyGroup + '_' + groups.slice().sort().join('-');
-  const CACHE_TTL = cacheMinutes * 60000;
-  let results = null;
-  let cached = false;
-
-  if (CACHE_TTL > 0) {
-    try {
-      const hit = ctx.storage && ctx.storage.getJSON ? ctx.storage.getJSON(cacheKey) : null;
-      if (hit && typeof hit === 'object' && hit.ts) {
-        const age = Date.now() - Number(hit.ts || 0);
-        if (age >= 0 && age <= CACHE_TTL && hit.data && typeof hit.data === 'object') {
-          // 只接纳本次要显示的服务都在缓存里的情况，避免筛选条件变了却渲染旧集合
-          const all = keys.every(function (k) { return hit.data[k]; });
-          if (all) {
-            results = {};
-            for (const k of keys) results[k] = hit.data[k];
-            cached = true;
-          }
-        }
-      }
-    } catch (_) {}
-  }
-
   // ---- 并发探测 ----
-  if (!results) {
-    const TOTAL_BUDGET_MS = 8000;
-    const deadline = Date.now() + TOTAL_BUDGET_MS;
+  // 每次刷新都是全新检测，不读不写缓存。
+  // 原因：失败结果同样会进缓存 —— 大尺寸超时产生的一批「未知」会通过缓存
+  // 传染给同策略组下的其他尺寸，把小尺寸也一起带成全灰。
+  const TOTAL_BUDGET_MS = 8000;
+  const deadline = Date.now() + TOTAL_BUDGET_MS;
 
-    const tasks = keys.map(function (key) {
-      const fn = CHECKERS[key];
-      return safeCheck(function () { return fn(ctx, strategyGroup, timeoutMs); }).then(function (r) {
-        // 预算耗尽后仍未返回的，统一降级为「未知」
-        if (Date.now() > deadline) return result(ST.UNKNOWN, '', 'budget');
-        return r;
-      });
+  const tasks = keys.map(function (key) {
+    const fn = CHECKERS[key];
+    return safeCheck(function () { return fn(ctx, strategyGroup, timeoutMs); }).then(function (r) {
+      // 预算耗尽后仍未返回的，统一降级为「未知」
+      if (Date.now() > deadline) return result(ST.UNKNOWN, '', 'budget');
+      return r;
     });
+  });
 
-    const settled = await Promise.all(tasks);
+  const settled = await Promise.all(tasks);
 
-    results = {};
-    keys.forEach(function (k, idx) { results[k] = settled[idx]; });
-
-    if (CACHE_TTL > 0) {
-      try {
-        if (ctx.storage && ctx.storage.setJSON) {
-          ctx.storage.setJSON(cacheKey, { ts: Date.now(), data: results });
-        }
-      } catch (_) {}
-    }
-  }
+  const results = {};
+  keys.forEach(function (k, idx) { results[k] = settled[idx]; });
 
   // ---- 渲染 ----
   return render({
@@ -1054,7 +1016,6 @@ export default async function (ctx = {}) {
     list: list,
     results: results,
     group: strategyGroup,
-    cached: cached,
     categories: groups
   });
 }
@@ -1138,8 +1099,20 @@ function render(opts) {
     return x.m.label;
   }
 
-  // 底部只保留缓存标记，不再显示策略组名
-  const footerText = opts.cached ? '缓存' : '';
+  // medium / large 统一两列布局，左右各一半
+  const half = Math.ceil(rows.length / 2);
+  const leftRows = rows.slice(0, half);
+  const rightRows = rows.slice(half);
+
+  // 两列布局通用构建（medium / large 共用）；底部区域已整体移除
+  function columnNode(list, labelSize, tailSize, iconSize, gap) {
+    return {
+      type: 'stack',
+      direction: 'column',
+      gap: gap,
+      children: list.map(function (x) { return rowNode(x, labelSize, tailSize, iconSize, true); })
+    };
+  }
 
   // 单行：图标 + 名称 + 状态。wide 控制是否显示服务自身图标
   function rowNode(x, labelSize, tailSize, iconSize, showServiceIcon) {
@@ -1307,20 +1280,7 @@ function render(opts) {
           direction: 'column',
           gap: 5,
           children: rows.map(function (x) { return rowNode(x, 12, 11, 12, false); })
-        },
-        ...(footerText
-          ? [
-              { type: 'spacer' },
-              {
-                type: 'stack',
-                direction: 'row',
-                children: [
-                  { type: 'text', text: footerText, font: { size: 9, weight: 'medium' }, textColor: C.muted, maxLine: 1 },
-                  { type: 'spacer' }
-                ]
-              }
-            ]
-          : [])
+        }
       ]
     };
   }
@@ -1353,45 +1313,19 @@ function render(opts) {
         { type: 'spacer' },
         {
           type: 'stack',
-          direction: 'column',
-          gap: 6,
-          children: rows.map(function (x) { return rowNode(x, 13, 12, 14, true); })
-        },
-        ...(footerText
-          ? [
-              { type: 'spacer' },
-              {
-                type: 'stack',
-                direction: 'row',
-                children: [
-                  { type: 'text', text: footerText, font: { size: 10, weight: 'medium' }, textColor: C.muted, maxLine: 1 },
-                  { type: 'spacer' }
-                ]
-              }
-            ]
-          : [])
+          direction: 'row',
+          gap: 16,
+          children: [
+            { ...columnNode(leftRows, 13, 12, 14, 6), flex: 1 },
+            { ...columnNode(rightRows, 13, 12, 14, 6), flex: 1 }
+          ]
+        }
       ]
     };
   }
 
-  // ---- systemLarge / systemExtraLarge（上限 24 行）----
-  // 只有超过 12 行才分两列 —— 12 行以内单列完全放得下，
-  // 强行分两列会让画面左右各几条，显得很空。
-  const useTwoColumns = rows.length > 12;
-  const half = Math.ceil(rows.length / 2);
-  // 单列时左列必须是完整列表。v1.0.2 写成 rows.slice(0, half)，
-  // 导致大尺寸只选 1 个分组（6 项）时只渲染出前 3 项 —— 实机 bug。
-  const leftRows = useTwoColumns ? rows.slice(0, half) : rows;
-  const rightRows = useTwoColumns ? rows.slice(half) : [];
-
-  function columnNode(list) {
-    return {
-      type: 'stack',
-      direction: 'column',
-      gap: 7,
-      children: list.map(function (x) { return rowNode(x, 12, 11, 13, true); })
-    };
-  }
+  // ---- systemLarge / systemExtraLarge（上限 24 行，两列）----
+  // half / leftRows / rightRows / columnNode 已在上方通用区定义
 
   return {
     type: 'widget',
@@ -1421,26 +1355,11 @@ function render(opts) {
         type: 'stack',
         direction: 'row',
         gap: 18,
-        children: useTwoColumns
-          ? [
-              { ...columnNode(leftRows), flex: 1 },
-              { ...columnNode(rightRows), flex: 1 }
-            ]
-          : [{ ...columnNode(leftRows), flex: 1 }]
-      },
-      ...(footerText
-        ? [
-            { type: 'spacer' },
-            {
-              type: 'stack',
-              direction: 'row',
-              children: [
-                { type: 'text', text: footerText, font: { size: 10, weight: 'medium' }, textColor: C.muted, maxLine: 1 },
-                { type: 'spacer' }
-              ]
-            }
-          ]
-        : [])
+        children: [
+          { ...columnNode(leftRows, 12, 11, 13, 7), flex: 1 },
+          { ...columnNode(rightRows, 12, 11, 13, 7), flex: 1 }
+        ]
+      }
     ]
   };
 }
