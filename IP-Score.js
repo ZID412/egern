@@ -1,6 +1,6 @@
 /*
-ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.17 测试版
-实时展示当前出口 IP、网络类型、人机流量比、地理位置，并评估 IP 风险值与欺诈等级
+ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.18
+实时展示当前出口 IP、网络类型、人机流量比、地理位置，并评估 IP 风险值与欺诈等级。
 
 【环境变量配置说明】
 【必填项】
@@ -441,16 +441,12 @@ export default async function(ctx) {
 
   }
 
-  // v1.0.17：人机流量比横条改用 SVG 画法（同和风天气组件）
-  // human 绿（C.green #34D399）在左、bot 红（C.risk5 #DC2626）在右，按 human% 硬切换
-  // 用 viewBox 相对坐标 + 外层 flex 拉伸，自适应容器宽度，不再依赖两段 flex 分配
-  // 只用「一条 rect + 一条硬边渐变」：两个独立圆角矩形叠加会在交界处产生半透明接缝（深色背景下断成两截）
   function humanBotBarSvg(humanPct, barH) {
     const barW = 300;
     const ratio = Math.max(0, Math.min(100, Number(humanPct) || 0)) / 100;
     const cut = (Math.round(barW * ratio) / barW).toFixed(4);
     const r = barH / 2;
-    return `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${barW} ${barH}' preserveAspectRatio='none'>` +
+    return `<svg xmlns='http://www.w3.org/2000/svg' width='100%' height='100%' viewBox='0 0 ${barW} ${barH}' preserveAspectRatio='none'>` +
       `<defs><linearGradient id='hb' x1='0' y1='0' x2='1' y2='0'>` +
       `<stop offset='0' stop-color='%2334D399'/><stop offset='${cut}' stop-color='%2334D399'/>` +
       `<stop offset='${cut}' stop-color='%23DC2626'/><stop offset='1' stop-color='%23DC2626'/>` +
@@ -503,9 +499,10 @@ export default async function(ctx) {
               {
                 type: 'image',
                 src: 'data:image/svg+xml,' + humanBotBarSvg(humanPct, 4),
-                flex: 1,
+                flex: 99,
                 height: 4
-              }
+              },
+              { type: 'spacer' }
             ]
           },
 
@@ -607,9 +604,10 @@ export default async function(ctx) {
               {
                 type: 'image',
                 src: 'data:image/svg+xml,' + humanBotBarSvg(humanPct, 5),
-                flex: 1,
+                flex: 99,
                 height: 5
-              }
+              },
+              { type: 'spacer' }
             ]
           }
 
