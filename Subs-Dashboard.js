@@ -1,19 +1,21 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.7
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.8
 支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
+适配桌面小中大组件、锁屏组件、桌面透明组件
 
 【环境变量配置说明】
 推荐：URL+NAME+RESET 即可
 
 【必填项】
-- URL1 ~ URL5：订阅链接（至少配置 URL1）
+- URL1 ~ URL6：订阅链接（至少配置 URL1）
+小尺寸=1个订阅，中尺寸最多2个订阅，大尺寸最多6个订阅
 
 【选填项 - 基础信息】
-- NAME1 ~ NAME5：订阅名称（不填默认显示 Sub 1、Sub 2...）
-- PROTOCOL1 ~ PROTOCOL5：协议备注（超长自动缩写：如 SS / Hy2）
-- NODES1 ~ NODES5：节点数量备注（只填纯数字如 20）
-- RESET1 ~ RESET5：每月重置日（1~31，不填写脚本自动推算，但自动推算可能不准确）
-- ACCENT1 ~ ACCENT5：专属主题色（脚本自动显示，可自定义如#46D66B、#58A6FF等HEX颜色代码）
+- NAME1 ~ NAME6：订阅名称（不填默认显示 Sub 1、Sub 2...）
+- PROTOCOL1 ~ PROTOCOL6：协议备注（超长自动缩写：如 SS / Hy2）
+- NODES1 ~ NODES6：节点数量备注（只填纯数字如 20）
+- RESET1 ~ RESET6：每月重置日（1~31，不填写脚本自动推算，但自动推算可能不准确）
+- ACCENT1 ~ ACCENT6：专属主题色（脚本自动显示，可自定义如#46D66B、#58A6FF等HEX颜色代码）
 
 【选填项 - 全局设置】
 - REFRESH_MINUTES：小组件刷新间隔（单位：分钟，默认 60）
@@ -39,7 +41,7 @@ ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.7
  */
 
 const DEFAULT_REFRESH_MINUTES = 60;
-const MAX_ACCOUNTS = 5;
+const MAX_ACCOUNTS = 6;
 
 // 脏数据（已用量异常归零）沿用上次有效值的最长保护时长
 // 超过该时长后强制接受归零，避免套餐重置时数据被无限期冻结在上一个周期
@@ -146,7 +148,7 @@ function normalizeFamily(value) {
 function limitForFamily(family) {
   if (family === "systemSmall" || family.startsWith("accessory")) return 1;
   if (family === "systemMedium") return 2;
-  return 5;
+  return 6;
 }
 
 function refreshMinutes(ctx) {
@@ -159,7 +161,7 @@ function refreshMinutes(ctx) {
 function collectAccounts(ctx, max) {
   const env = ctx.env || {};
   const accounts = [];
-  const accents = ["#46D66B", "#7A84E8", "#58A6FF", "#FFB800", "#FF6B6B"];
+  const accents = ["#46D66B", "#7A84E8", "#58A6FF", "#FFB800", "#FF6B6B", "#C084FC"];
 
   const shuffledSymbols = shuffleArray(RANDOM_SYMBOL_POOL);
 
