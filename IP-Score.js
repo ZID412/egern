@@ -1,6 +1,6 @@
 /*
-ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.18
-实时展示当前出口 IP、网络类型、人机流量比、地理位置，并评估 IP 风险值与欺诈等级
+ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.19
+实时展示当前出口 IP、网络类型、人机流量比、地理位置，并评估 IP 风险值与欺诈等级。
 
 【环境变量配置说明】
 【必填项】
@@ -441,20 +441,6 @@ export default async function(ctx) {
 
   }
 
-  function humanBotBarSvg(humanPct, barH) {
-    const barW = 300;
-    const ratio = Math.max(0, Math.min(100, Number(humanPct) || 0)) / 100;
-    const cut = (Math.round(barW * ratio) / barW).toFixed(4);
-    const r = barH / 2;
-    return `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${barW} ${barH}' preserveAspectRatio='none'>` +
-      `<defs><linearGradient id='hb' x1='0' y1='0' x2='1' y2='0'>` +
-      `<stop offset='0' stop-color='%2334D399'/><stop offset='${cut}' stop-color='%2334D399'/>` +
-      `<stop offset='${cut}' stop-color='%23DC2626'/><stop offset='1' stop-color='%23DC2626'/>` +
-      `</linearGradient></defs>` +
-      `<rect x='0' y='0' width='${barW}' height='${barH}' rx='${r}' fill='url(%23hb)'/>` +
-      `</svg>`;
-  }
-
   // 小尺寸专用的人机流量比：标签 + ASN 在横条上方，human / bot 在横条下方
   // （中/大尺寸是「标签与 human/bot 同一行、都在横条上方」，布局不同，故单独写一份）
   function botClassRowsSmall(bc) {
@@ -494,15 +480,25 @@ export default async function(ctx) {
             type: 'stack',
             direction: 'row',
             alignItems: 'center',
+            gap: 0,
             height: 4,
+            borderRadius: 99,
+            backgroundColor: C.risk5,
             children: [
               {
-                type: 'image',
-                src: 'data:image/svg+xml,' + humanBotBarSvg(humanPct, 4),
-                flex: 999,
-                height: 4
+                type: 'stack',
+                flex: Math.max(humanPct, 0.5),
+                height: 4,
+                backgroundColor: C.green,
+                borderRadius: 99,
+                children: []
               },
-              { type: 'spacer' }
+              {
+                type: 'stack',
+                flex: Math.max(botPct, 0.5),
+                height: 4,
+                children: []
+              }
             ]
           },
 
@@ -599,15 +595,25 @@ export default async function(ctx) {
             type: 'stack',
             direction: 'row',
             alignItems: 'center',
+            gap: 0,
             height: 5,
+            borderRadius: 99,
+            backgroundColor: C.risk5,
             children: [
               {
-                type: 'image',
-                src: 'data:image/svg+xml,' + humanBotBarSvg(humanPct, 5),
-                flex: 999,
-                height: 5
+                type: 'stack',
+                flex: Math.max(humanPct, 0.5),
+                height: 5,
+                backgroundColor: C.green,
+                borderRadius: 99,
+                children: []
               },
-              { type: 'spacer' }
+              {
+                type: 'stack',
+                flex: Math.max(botPct, 0.5),
+                height: 5,
+                children: []
+              }
             ]
           }
 
