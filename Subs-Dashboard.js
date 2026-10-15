@@ -1,6 +1,6 @@
 /*
-ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.6
-支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等
+ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.7
+支持可视化展示多个机场订阅的流量百分比、今日用量、剩余流量及套餐到期时间，汇总用量等.
 
 【环境变量配置说明】
 推荐：URL+NAME+RESET 即可
@@ -1114,9 +1114,12 @@ function renderProgress(value, accent, palette, height) {
     direction: "row",
     alignItems: "center",
     gap: 0,
+    height,
+    borderRadius: 99,
+    backgroundColor: palette.track,
     children: [
       { type: "stack", flex: filled, height, backgroundColor: accent, borderRadius: 99, children: [] },
-      { type: "stack", flex: empty, height, backgroundColor: palette.track, borderRadius: 99, children: [] },
+      { type: "stack", flex: empty, height, children: [] },
     ],
   };
 }
