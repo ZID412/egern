@@ -1,6 +1,7 @@
 /*
-ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.19
-实时展示当前出口 IP、网络类型、人机流量比、地理位置，并评估 IP 风险值与欺诈等级。
+ZID412 - Egern通用脚本小组件 - IP纯净度 v1.0.20
+实时展示当前出口 IP、网络类型、人机流量比、地理位置，并评估 IP 风险值等
+适配桌面小中大组件、锁屏组件、桌面透明组件
 
 【环境变量配置说明】
 【必填项】
@@ -487,7 +488,7 @@ export default async function(ctx) {
             children: [
               {
                 type: 'stack',
-                flex: Math.max(humanPct, 0.5),
+                flex: humanPct > 0 ? Math.max(humanPct, 0.5) : 0,
                 height: 4,
                 backgroundColor: C.green,
                 borderRadius: 99,
@@ -495,7 +496,7 @@ export default async function(ctx) {
               },
               {
                 type: 'stack',
-                flex: Math.max(botPct, 0.5),
+                flex: botPct > 0 ? Math.max(botPct, 0.5) : 0,
                 height: 4,
                 children: []
               }
@@ -602,7 +603,7 @@ export default async function(ctx) {
             children: [
               {
                 type: 'stack',
-                flex: Math.max(humanPct, 0.5),
+                flex: humanPct > 0 ? Math.max(humanPct, 0.5) : 0,
                 height: 5,
                 backgroundColor: C.green,
                 borderRadius: 99,
@@ -610,7 +611,7 @@ export default async function(ctx) {
               },
               {
                 type: 'stack',
-                flex: Math.max(botPct, 0.5),
+                flex: botPct > 0 ? Math.max(botPct, 0.5) : 0,
                 height: 5,
                 children: []
               }
