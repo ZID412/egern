@@ -19,7 +19,7 @@ ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.8
 
 【选填项 - 全局设置】
 - REFRESH_MINUTES：小组件刷新间隔（单位：分钟，默认 60）
-- SHOW：筛选并指定排序（如填 1,3,4 或填名字，大组件最多展示 5 个）
+- SHOW：筛选并指定排序（如填 1,3,4 或填名字，大组件最多展示 6 个）
 - WIDGET_STYLE：小组件背景 glass = 液态玻璃，不填默认黑色背景
 
 【协议/节点备注显示逻辑】
@@ -34,7 +34,7 @@ ZID412 - Egern通用脚本小组件 - 机场订阅看板 v3.5.8
 2. 类型选择“计划”
 3. Cron表达式填写"0 0 * * *"
 4. 脚本位置选择远程，填写此组件链接即可
-5. 环境变量填写你的订阅链接 URL1 ~ URL5
+5. 环境变量填写你的订阅链接 URL1 ~ URL6
 
 该组件代码为修改版，原版地址：https://raw.githubusercontent.com/Harley0214/Egern-widgest-SUBTraffic-monitor/main/ModernSubTraffic-Egern-Generic.js
 ----------------------------------------------------------
